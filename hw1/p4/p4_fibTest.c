@@ -11,6 +11,11 @@
  *  - https://computing.llnl.gov/tutorials/pthreads/
  *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/simplethread/pthread.c
  *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/code/RT-Clock/posix_clock.c
+ *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/code/sequencer/lab1.c
+ *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/example-3/testdigest.c
+ *  - https://linux.die.net/man/3/pthread_attr_init
+ *  - 
+ *  - 
  *  - 
  *  - 
  *  - 
@@ -22,6 +27,8 @@
 #include <sched.h>
 
 #define NUM_THREADS 2
+#define SCHED_POLICY SCHED_FIFO
+
 /*----------------------------------------------------------------*/
 // POSIX thread declarations and scheduling attributes
 typedef struct
@@ -33,14 +40,27 @@ typedef struct
 
 pthread_t threads[NUM_THREADS];
 threadParams_t threadParams[NUM_THREADS];
+pthread_attr_t schedAttr;
+struct sched_param schedParam;
 
-static struct timespec rtclk_start_time      = {0, 0};
-static struct timespec rtclk_fib10_stop_time = {0, 0};
-static struct timespec rtclk_fib20_stop_time = {0, 0};
-static int fib10Result = 0;
-static int fib20Result = 0;
+static struct timespec rtclk_start_time = {0, 0};
 
+/*----------------------------------------------------------------*/
+/* Function Prototypes */
 int fibonacci(int num);
+
+/*----------------------------------------------------------------*/
+void setSchedPolicyPriority() {
+    int maxPriority = 0;
+
+    pthread_attr_init(&schedAttr);
+    pthread_attr_setinheritsched(&schedAttr, PTHREAD_EXPLICIT_SCHED);
+    pthread_attr_setschedpolicy(&schedAttr, SCHED_POLICY);
+
+    maxPriority = sched_get_priority_max(SCHED_POLICY);
+    schedParam.sched_priority = maxPriority;
+    sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
+}
 
 /*----------------------------------------------------------------*/
 int fibonacci(int num) {
@@ -70,9 +90,13 @@ void fibonacciThread(void *threadp) {
 int main (int argc, char *argv[])
 {
     int i = 0;
+    int fib10Result = 0;
+    int fib20Result = 0;
+    struct timespec rtclk_fib10_stop_time = {0, 0};
+    struct timespec rtclk_fib20_stop_time = {0, 0};
 
-   /* Capture time of program start */
-   clock_gettime(CLOCK_REALTIME, &rtclk_start_time);
+    /* Set schedule policy */
+    setSchedPolicyPriority();
 
    /* Populate threadParams variable */
    threadParams[0].fibSequenceNum = 10;
@@ -81,6 +105,9 @@ int main (int argc, char *argv[])
    threadParams[1].fibSequenceNum = 20;
    threadParams[1].fibSequenceResult = &fib20Result;
    threadParams[1].stopClkTime = &rtclk_fib20_stop_time;
+
+   /* Capture time of program start */
+   clock_gettime(CLOCK_REALTIME, &rtclk_start_time);
 
     /* Create POSIX pThreads */
    for(i=0; i<NUM_THREADS; i++) {
