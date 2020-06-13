@@ -79,7 +79,7 @@ int fibonacci(int num) {
     return result;
 }
 /*----------------------------------------------------------------*/
-void fibonacciThread(void *threadp) {
+void *fibonacciThread(void *threadp) {
     threadParams_t *threadParams = (threadParams_t *)threadp;
     
     /* Compute Fibonacci Sequence */
