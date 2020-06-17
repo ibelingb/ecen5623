@@ -41,10 +41,12 @@ U32_T ex7_wcet[] = {1, 1, 1, 2};
 U32_T ex8_period[] = {2, 5, 10};
 U32_T ex8_wcet[] = {1, 1, 3};
 
+// U=1.0
+U32_T ex9_period[] = {2, 5, 10};
+U32_T ex9_wcet[] = {1, 2, 2};
 
 int completion_time_feasibility(U32_T numServices, U32_T period[], U32_T wcet[], U32_T deadline[]);
 int scheduling_point_feasibility(U32_T numServices, U32_T period[], U32_T wcet[], U32_T deadline[]);
-
 
 int main(void)
 { 
@@ -130,6 +132,14 @@ int main(void)
     else
         printf("INFEASIBLE\n");
 
+    printf("Ex-0 U=%4.2f (C1=1, C2=2, C3=1; T1=2, T2=5, T3=10; T=D): ",
+		   ((1.0/2.0) + (2.0/5.0) + (1.0/10.0)));
+	numServices = sizeof(ex9_period)/sizeof(U32_T);
+    if(completion_time_feasibility(numServices, ex9_period, ex9_wcet, ex9_period) == TRUE)
+        printf("FEASIBLE\n");
+    else
+        printf("INFEASIBLE\n");
+
 
     /*************************************************************************************/
 	printf("\n\n");
@@ -206,6 +216,14 @@ int main(void)
 		   ((1.0/2.0) + (1.0/5.0) + (3.0/10.0)));
 	numServices = sizeof(ex8_period)/sizeof(U32_T);
     if(scheduling_point_feasibility(numServices, ex8_period, ex8_wcet, ex8_period) == TRUE)
+        printf("FEASIBLE\n");
+    else
+        printf("INFEASIBLE\n");
+
+    printf("Ex-0 U=%4.2f (C1=1, C2=2, C3=1; T1=2, T2=5, T3=10; T=D): ",
+		   ((1.0/2.0) + (2.0/5.0) + (1.0/10.0)));
+	numServices = sizeof(ex9_period)/sizeof(U32_T);
+    if(scheduling_point_feasibility(numServices, ex9_period, ex9_wcet, ex9_period) == TRUE)
         printf("FEASIBLE\n");
     else
         printf("INFEASIBLE\n");
