@@ -98,7 +98,6 @@ int main(void)
 
     /*************************************************************************************/
     /* User added examples */
-    /*
     printf("*** User added Examples\n");
 
     printf("Ex-5 U=%4.2f (C1=1, C2=1, C3=2; T1=2, T2=4, T3=8; T=D): ",
@@ -140,7 +139,7 @@ int main(void)
         printf("FEASIBLE\n");
     else
         printf("INFEASIBLE\n");
-    */
+
 
     /*************************************************************************************/
 	printf("\n\n");
@@ -187,7 +186,6 @@ int main(void)
         printf("INFEASIBLE\n");
     /*************************************************************************************/
     /* User added examples */
-    /*
     printf("*** User added Examples\n");
 
     printf("Ex-5 U=%4.2f (C1=1, C2=1, C3=2; T1=2, T2=4, T3=8; T=D): ",
@@ -229,8 +227,6 @@ int main(void)
         printf("FEASIBLE\n");
     else
         printf("INFEASIBLE\n");
-
-    */
 
     /*************************************************************************************/
 }
