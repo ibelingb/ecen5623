@@ -65,7 +65,7 @@ int main(void)
         printf("INFEASIBLE\n");
 
     printf("Ex-1 U=%4.2f (C1=1, C2=1, C3=2; T1=2, T2=5, T3=7; T=D): ", 
-		   ((1.0/2.0) + (1.0/5.0) + (1.0/7.0)));
+		   ((1.0/2.0) + (1.0/5.0) + (2.0/7.0)));
 	numServices = sizeof(ex1_period)/sizeof(U32_T);
     if(completion_time_feasibility(numServices, ex1_period, ex1_wcet, ex1_period) == TRUE)
         printf("FEASIBLE\n");
@@ -98,6 +98,7 @@ int main(void)
 
     /*************************************************************************************/
     /* User added examples */
+    /*
     printf("*** User added Examples\n");
 
     printf("Ex-5 U=%4.2f (C1=1, C2=1, C3=2; T1=2, T2=4, T3=8; T=D): ",
@@ -139,7 +140,7 @@ int main(void)
         printf("FEASIBLE\n");
     else
         printf("INFEASIBLE\n");
-
+    */
 
     /*************************************************************************************/
 	printf("\n\n");
@@ -154,7 +155,7 @@ int main(void)
         printf("INFEASIBLE\n");
 
     printf("Ex-1 U=%4.2f (C1=1, C2=1, C3=2; T1=2, T2=5, T3=7; T=D): ", 
-		   ((1.0/2.0) + (1.0/5.0) + (1.0/7.0)));
+		   ((1.0/2.0) + (1.0/5.0) + (2.0/7.0)));
 	numServices = sizeof(ex1_period)/sizeof(U32_T);
     if(scheduling_point_feasibility(numServices, ex1_period, ex1_wcet, ex1_period) == TRUE)
         printf("FEASIBLE\n");
@@ -186,6 +187,7 @@ int main(void)
         printf("INFEASIBLE\n");
     /*************************************************************************************/
     /* User added examples */
+    /*
     printf("*** User added Examples\n");
 
     printf("Ex-5 U=%4.2f (C1=1, C2=1, C3=2; T1=2, T2=4, T3=8; T=D): ",
@@ -227,6 +229,8 @@ int main(void)
         printf("FEASIBLE\n");
     else
         printf("INFEASIBLE\n");
+
+    */
 
     /*************************************************************************************/
 }
