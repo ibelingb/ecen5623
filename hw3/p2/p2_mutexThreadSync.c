@@ -3,12 +3,15 @@
  * Author: Brian Ibeling
  * Date: 6/24/2020
  *
- * TODO
+ * Code to demonstrate the use of Mutex sync between multiple threads of differing priorities.
+ * A global data struct is shared between multiple threads, one which continuously increments
+ * the data values and the other which reads and prints the global data.
  * 
  * References and notes used in this code:
  *  - https://computing.llnl.gov/tutorials/pthreads/
  *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/simplethread/pthread.c
  *  - https://linux.die.net/man/3/pthread_mutex_lock
+ *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/code/example-sync-updated-2/pthread3.c
 */
 /*----------------------------------------------------------------*/
 #include <pthread.h>
@@ -16,7 +19,6 @@
 #include <stdio.h>
 #include <sched.h>
 #include <string.h>
-
 #include <sys/time.h>
 
 #define NUM_THREADS 2
@@ -52,9 +54,9 @@ static struct timespec write_thread_sleep_time = {WRITE_THREAD_SEC_TIME, WRITE_T
 static struct timespec read_thread_sleep_time = {READ_THREAD_SEC_TIME, READ_THREAD_NSEC_TIME};
 
 /*----------------------------------------------------------------*/
-/*
- *
- *
+/* Thread function which continuously updates global data, locking and unlocking the shared mutex
+ * immediately before and after each write event. Thread loops and sleeps on set WRITE_THREAD_SEC_TIME 
+ * and WRITE_THREAD_NSEC_TIME time internal.
  */
 void *updatePositionAttitudeState()
 {
@@ -75,9 +77,9 @@ void *updatePositionAttitudeState()
     }
 }
 /*----------------------------------------------------------------*/
-/*
- *
- *
+/* Thread function which continuously reads global data, locking and unlocking the shared mutex
+ * immediately before and after each read event. Thread loops and sleeps on set READ_THREAD_SEC_TIME 
+ * and READ_THREAD_NSEC_TIME time internal.
  */
 void *readPositionAttitudeState() {
     navData_t localData = {0};
@@ -112,9 +114,8 @@ void *readPositionAttitudeState() {
 }
 
 /*----------------------------------------------------------------*/
-/*
- *
- *
+/* Set pthread scheduling priorities and policy. This should be called before
+ * any threads are created.
  */
 void setSchedPolicyPriority() {
     int maxPriority = 0;
@@ -132,9 +133,8 @@ void setSchedPolicyPriority() {
 
 
 /*----------------------------------------------------------------*/
-/*
- *
- *
+/* Main - Create global data write and read POSIX threads, setting thread priorities and initializing
+ * the shared global mutex prior to each thread being created.
  */
 int main (int argc, char *argv[])
 {
