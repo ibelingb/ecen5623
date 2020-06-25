@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <sched.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/time.h>
 
 #define NUM_THREADS 2
@@ -63,7 +64,7 @@ void *updatePositionAttitudeState()
     while (1) {
         pthread_mutex_lock(&sharedMemSem);
 
-        gettimeofday(&globalData.timeSampled, (void *)0);
+        clock_gettime(CLOCK_REALTIME, &globalData.timeSampled);
         globalData.accel_x += 0.1;
         globalData.accel_y += 0.2;
         globalData.accel_z += 0.3;
@@ -157,7 +158,5 @@ int main (int argc, char *argv[])
 
    for(i=0;i<NUM_THREADS;i++)
        pthread_join(threads[i], NULL);
-
 }
-
 /*----------------------------------------------------------------*/
