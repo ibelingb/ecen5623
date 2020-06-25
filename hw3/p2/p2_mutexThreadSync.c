@@ -15,6 +15,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sched.h>
+#include <string.h>
+
+#include <sys/time.h>
 
 #define NUM_THREADS 2
 #define LOW_PRIO_SERVICE 0
@@ -40,32 +43,58 @@ typedef struct {
 } navData_t;
 
 navData_t globalData = {0};
+static struct timespec sleep_time = {1, 0};
 
 /*----------------------------------------------------------------*/
-void updatePositionAttitudeState() {
-    pthread_mutex_lock(&sharedMemSem);
+void *updatePositionAttitudeState()
+{
+    while (1) {
+        pthread_mutex_lock(&sharedMemSem);
 
-    gettimeofday(&globalData.timeSampled, (void *)0);
-    globalData.accel_x += 0.1;
-    globalData.accel_y += 0.2;
-    globalData.accel_z += 0.3;
-    globalData.roll    += 1.0;
-    globalData.pitch   += 2.0;
-    globalData.yaw     += 3.0;
+        gettimeofday(&globalData.timeSampled, (void *)0);
+        globalData.accel_x += 0.1;
+        globalData.accel_y += 0.2;
+        globalData.accel_z += 0.3;
+        globalData.roll    += 0.3;
+        globalData.pitch   += 0.2;
+        globalData.yaw     += 0.1;
 
-    pthread_mutex_unlock(&sharedMemSem);
+        pthread_mutex_unlock(&sharedMemSem);
+
+        nanosleep(&sleep_time, &sleep_time);
+    }
 }
 /*----------------------------------------------------------------*/
-void readPositionAttitudeState() {
+void *readPositionAttitudeState() {
     navData_t localData = {0};
 
-    /* Copy global data into local data struct */
-    pthread_mutex_lock(&sharedMemSem);
-    memcpy(&localData, &globalData, sizeof(navData_t));
-    pthread_mutex_unlock(&sharedMemSem);
+    while (1)
+    {
+        /* Copy global data into local data struct */
+        pthread_mutex_lock(&sharedMemSem);
+        memcpy(&localData, &globalData, sizeof(navData_t));
+        pthread_mutex_unlock(&sharedMemSem);
 
-    /* Print data copied from global data struct */
-    //TODO
+        /* Print data copied from global data struct */
+        printf("Reporting position data:\n \
+                Time: %ld, %ld\n \
+                Accel_X: %f\n \
+                Accel_Y: %f\n \
+                Accel_Z: %f\n \
+                Roll: %f\n \
+                Pitch: %f\n \
+                Yaw: %f\n",
+                localData.timeSampled.tv_sec,
+                localData.timeSampled.tv_nsec,
+                localData.accel_x,
+                localData.accel_y,
+                localData.accel_z,
+                localData.roll,
+                localData.pitch,
+                localData.yaw);
+
+        nanosleep(&sleep_time, &sleep_time);
+    }
 }
 
 /*----------------------------------------------------------------*/
