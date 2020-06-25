@@ -43,7 +43,7 @@ U32_T ex8_wcet[] = {1, 1, 3};
 
 // U=1.0
 U32_T ex9_period[] = {2, 5, 10};
-U32_T ex9_wcet[] = {1, 2, 2};
+U32_T ex9_wcet[] = {1, 2, 1};
 
 int completion_time_feasibility(U32_T numServices, U32_T period[], U32_T wcet[], U32_T deadline[]);
 int scheduling_point_feasibility(U32_T numServices, U32_T period[], U32_T wcet[], U32_T deadline[]);
