@@ -61,9 +61,11 @@ static struct timespec read_thread_sleep_time = {READ_THREAD_SEC_TIME, READ_THRE
  */
 void *updatePositionAttitudeState()
 {
-    while (1) {
+    while (1) 
+    {
+        /* Lock/Unlock critical section before/after updating global data */
+        /* Update global data */
         pthread_mutex_lock(&sharedMemSem);
-
         clock_gettime(CLOCK_REALTIME, &globalData.timeSampled);
         globalData.accel_x += 0.1;
         globalData.accel_y += 0.2;
@@ -71,7 +73,6 @@ void *updatePositionAttitudeState()
         globalData.roll    += 0.3;
         globalData.pitch   += 0.2;
         globalData.yaw     += 0.1;
-
         pthread_mutex_unlock(&sharedMemSem);
 
         nanosleep(&write_thread_sleep_time, &write_thread_sleep_time);
@@ -87,6 +88,7 @@ void *readPositionAttitudeState() {
 
     while (1)
     {
+        /* Lock/Unlock critical section before/after read from global data */
         /* Copy global data into local data struct */
         pthread_mutex_lock(&sharedMemSem);
         memcpy(&localData, &globalData, sizeof(navData_t));
