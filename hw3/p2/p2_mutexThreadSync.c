@@ -23,15 +23,20 @@
 #define LOW_PRIO_SERVICE 0
 #define HIGH_PRIO_SERVICE 1
 #define SCHED_POLICY SCHED_FIFO
+#define WRITE_THREAD_SEC_TIME 0
+#define WRITE_THREAD_NSEC_TIME 1000000
+#define READ_THREAD_SEC_TIME 0
+#define READ_THREAD_NSEC_TIME 1000000
 
-// POSIX thread declarations and scheduling attributes
+/* POSIX thread declarations and scheduling attributes */
 pthread_t threads[NUM_THREADS];
+pthread_mutex_t sharedMemSem;
 pthread_attr_t schedAttr;
 struct sched_param schedParam;
-pthread_mutex_t sharedMemSem;
-int rt_max_prio;
-int rt_min_prio;
+int rtPrioLow;
+int rtPrioHigh;
 
+/* Setup global data struct and thread sample rates */
 typedef struct {
     struct timespec timeSampled;
     double accel_x;
@@ -43,9 +48,14 @@ typedef struct {
 } navData_t;
 
 navData_t globalData = {0};
-static struct timespec sleep_time = {1, 0};
+static struct timespec write_thread_sleep_time = {WRITE_THREAD_SEC_TIME, WRITE_THREAD_NSEC_TIME};
+static struct timespec read_thread_sleep_time = {READ_THREAD_SEC_TIME, READ_THREAD_NSEC_TIME};
 
 /*----------------------------------------------------------------*/
+/*
+ *
+ *
+ */
 void *updatePositionAttitudeState()
 {
     while (1) {
@@ -61,10 +71,14 @@ void *updatePositionAttitudeState()
 
         pthread_mutex_unlock(&sharedMemSem);
 
-        nanosleep(&sleep_time, &sleep_time);
+        nanosleep(&write_thread_sleep_time, &write_thread_sleep_time);
     }
 }
 /*----------------------------------------------------------------*/
+/*
+ *
+ *
+ */
 void *readPositionAttitudeState() {
     navData_t localData = {0};
 
@@ -76,7 +90,7 @@ void *readPositionAttitudeState() {
         pthread_mutex_unlock(&sharedMemSem);
 
         /* Print data copied from global data struct */
-        printf("Reporting position data:\n \
+        printf("Reporting Position and Attitude data:\n \
                 Time: %ld, %ld\n \
                 Accel_X: %f\n \
                 Accel_Y: %f\n \
@@ -93,11 +107,15 @@ void *readPositionAttitudeState() {
                 localData.pitch,
                 localData.yaw);
 
-        nanosleep(&sleep_time, &sleep_time);
+        nanosleep(&read_thread_sleep_time, &read_thread_sleep_time);
     }
 }
 
 /*----------------------------------------------------------------*/
+/*
+ *
+ *
+ */
 void setSchedPolicyPriority() {
     int maxPriority = 0;
 
@@ -114,18 +132,27 @@ void setSchedPolicyPriority() {
 
 
 /*----------------------------------------------------------------*/
+/*
+ *
+ *
+ */
 int main (int argc, char *argv[])
 {
-   int rc;
    int i;
 
-   rt_max_prio = sched_get_priority_max(SCHED_POLICY);
-   rt_min_prio = sched_get_priority_min(SCHED_POLICY);
+   /* Capture thread prio levels */
+   rtPrioLow = sched_get_priority_min(SCHED_POLICY) + 1;
+   rtPrioHigh = sched_get_priority_min(SCHED_POLICY) + 2;
 
    pthread_mutex_init(&sharedMemSem, NULL);
 
+    /* Create threads, setting priority of Nav data write thread higher than the data read thread */
+   schedParam.sched_priority = rtPrioLow;
+   pthread_attr_setschedparam(&schedAttr, &schedParam);
    pthread_create(&threads[LOW_PRIO_SERVICE], &schedAttr, readPositionAttitudeState, (void *)NULL);
 
+   schedParam.sched_priority = rtPrioHigh;
+   pthread_attr_setschedparam(&schedAttr, &schedParam);
    pthread_create(&threads[HIGH_PRIO_SERVICE], &schedAttr, updatePositionAttitudeState, (void *)NULL);
 
    for(i=0;i<NUM_THREADS;i++)
