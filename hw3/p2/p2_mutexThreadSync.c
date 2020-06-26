@@ -33,7 +33,7 @@
 
 /* POSIX thread declarations and scheduling attributes */
 pthread_t threads[NUM_THREADS];
-pthread_mutex_t sharedMemSem;
+pthread_mutex_t sharedMemMutex;
 pthread_attr_t schedAttr;
 struct sched_param schedParam;
 int rtPrioLow;
@@ -65,7 +65,7 @@ void *updatePositionAttitudeState()
     {
         /* Lock/Unlock critical section before/after updating global data */
         /* Update global data */
-        pthread_mutex_lock(&sharedMemSem);
+        pthread_mutex_lock(&sharedMemMutex);
         clock_gettime(CLOCK_REALTIME, &globalData.timeSampled);
         globalData.accel_x += 0.1;
         globalData.accel_y += 0.2;
@@ -73,7 +73,7 @@ void *updatePositionAttitudeState()
         globalData.roll    += 0.3;
         globalData.pitch   += 0.2;
         globalData.yaw     += 0.1;
-        pthread_mutex_unlock(&sharedMemSem);
+        pthread_mutex_unlock(&sharedMemMutex);
 
         nanosleep(&write_thread_sleep_time, &write_thread_sleep_time);
     }
@@ -90,9 +90,9 @@ void *readPositionAttitudeState() {
     {
         /* Lock/Unlock critical section before/after read from global data */
         /* Copy global data into local data struct */
-        pthread_mutex_lock(&sharedMemSem);
+        pthread_mutex_lock(&sharedMemMutex);
         memcpy(&localData, &globalData, sizeof(navData_t));
-        pthread_mutex_unlock(&sharedMemSem);
+        pthread_mutex_unlock(&sharedMemMutex);
 
         /* Print data copied from global data struct */
         printf("Reporting Position and Attitude data:\n \
@@ -147,7 +147,7 @@ int main (int argc, char *argv[])
    rtPrioLow = sched_get_priority_min(SCHED_POLICY) + 1;
    rtPrioHigh = sched_get_priority_min(SCHED_POLICY) + 2;
 
-   pthread_mutex_init(&sharedMemSem, NULL);
+   pthread_mutex_init(&sharedMemMutex, NULL);
 
     /* Create threads, setting priority of Nav data write thread higher than the data read thread */
    schedParam.sched_priority = rtPrioLow;
@@ -160,5 +160,9 @@ int main (int argc, char *argv[])
 
    for(i=0;i<NUM_THREADS;i++)
        pthread_join(threads[i], NULL);
+
+    pthread_mutex_destroy(&sharedMemMutex);
+
+    return 0;
 }
 /*----------------------------------------------------------------*/
