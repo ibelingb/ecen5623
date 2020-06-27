@@ -16,6 +16,8 @@
 #include <sched.h>
 #include <time.h>
 #include <stdlib.h>
+#include <sys/time.h>
+#include <unistd.h>
 
 #define NUM_THREADS		4
 #define START_SERVICE 		0
