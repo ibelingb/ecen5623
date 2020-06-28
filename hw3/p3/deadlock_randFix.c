@@ -13,7 +13,6 @@
 typedef struct
 {
     int threadIdx;
-    int delaySec;
 } threadParams_t;
 
 
@@ -32,19 +31,12 @@ pthread_mutex_t rsrcB = PTHREAD_MUTEX_INITIALIZER;
 
 volatile int rsrcACnt=0, rsrcBCnt=0, noWait=0;
 
-int deadlockCheckLoopCount = 0;
-int deadlockCheckMaxCount = 10;
-int thread1Complete = 0;
-int thread2Complete = 0;
-
 
 void *grabRsrcs(void *threadp)
 {
    threadParams_t *threadParams = (threadParams_t *)threadp;
    int threadIdx = threadParams->threadIdx;
 
-   /* Delay based on randomized input value */
-   sleep(threadParams->delaySec);
 
    if(threadIdx == THREAD_1)
    {
@@ -59,7 +51,6 @@ void *grabRsrcs(void *threadp)
      pthread_mutex_unlock(&rsrcB);
      pthread_mutex_unlock(&rsrcA);
      printf("THREAD 1 done\n");
-     thread1Complete = 1;
    }
    else
    {
@@ -74,7 +65,6 @@ void *grabRsrcs(void *threadp)
      pthread_mutex_unlock(&rsrcA);
      pthread_mutex_unlock(&rsrcB);
      printf("THREAD 2 done\n");
-     thread2Complete = 1;
    }
    pthread_exit(NULL);
 }
@@ -107,7 +97,6 @@ int main (int argc, char *argv[])
 
    printf("Creating thread %d\n", THREAD_1);
    threadParams[THREAD_1].threadIdx=THREAD_1;
-   threadParams[THREAD_1].delaySec=0;
    rc = pthread_create(&threads[0], NULL, grabRsrcs, (void *)&threadParams[THREAD_1]);
    if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
    printf("Thread 1 spawned\n");
@@ -122,51 +111,12 @@ int main (int argc, char *argv[])
 
    printf("Creating thread %d\n", THREAD_2);
    threadParams[THREAD_2].threadIdx=THREAD_2;
-   threadParams[THREAD_2].delaySec=0;
    rc = pthread_create(&threads[1], NULL, grabRsrcs, (void *)&threadParams[THREAD_2]);
    if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
    printf("Thread 2 spawned\n");
 
    printf("rsrcACnt=%d, rsrcBCnt=%d\n", rsrcACnt, rsrcBCnt);
    printf("will try to join CS threads unless they deadlock\n");
-
-   /* 
-    * Monitor if deadlock has occurred by checking to see if both threads execute for an extended period of time
-    * without either completing. If 
-    */
-    do {
-      /* Deadlock detected, cancel both threads and re-create with random delay */
-      if (deadlockCheckLoopCount >= deadlockCheckMaxCount) {
-        printf("ERROR: Deadlock detected!\n");
-
-        printf("Thread 1 cancel\n");
-        pthread_cancel(&threads[0]);
-        printf("Thread 2 cancel\n");
-        pthread_cancel(&threads[1]);
-
-        threadParams[THREAD_1].delaySec = (rand() % 5);
-        threadParams[THREAD_2].delaySec = (rand() % 5);
-
-        pthread_mutex_unlock(&rsrcB);
-        pthread_mutex_unlock(&rsrcA);
-
-        /* Re-start both threads */
-        printf("Thread 1 restart\n");
-        rc = pthread_create(&threads[0], NULL, grabRsrcs, (void *)&threadParams[THREAD_1]);
-        if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
-
-        printf("Thread 2 restart\n");
-        rc = pthread_create(&threads[1], NULL, grabRsrcs, (void *)&threadParams[THREAD_2]);
-        if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
-
-        deadlockCheckLoopCount = 0;
-      }
-
-      /* */
-      printf("Checking Deadlock\n");
-      deadlockCheckLoopCount++;
-      sleep(1);
-    } while((thread1Complete == 0) && (thread2Complete == 0));
 
    if(!safe)
    {
