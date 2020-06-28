@@ -1,3 +1,16 @@
+/* deadlock_randFix.c
+ * ECEN5623 - Real-Time Embedded Systems
+ * Author: Brian Ibeling
+ * Date: 6/27/2020
+ *
+ * Code below executes the deadlock.c but with an added check if deadlock has occurred, and if
+ * true to restart both child threads with a randomized delay at the start of each.
+ * 
+ * Resources and References:
+ *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/code/example-sync-updated-2/deadlock.c
+ *  - https://man7.org/linux/man-pages/man3/pthread_cancel.3.html
+ */
+
 #include <pthread.h>
 #include <stdio.h>
 #include <sched.h>
@@ -13,6 +26,7 @@
 typedef struct
 {
     int threadIdx;
+    int delaySec;
 } threadParams_t;
 
 
@@ -31,12 +45,19 @@ pthread_mutex_t rsrcB = PTHREAD_MUTEX_INITIALIZER;
 
 volatile int rsrcACnt=0, rsrcBCnt=0, noWait=0;
 
+// Variables to check for deadlock event
+int deadlockCheckLoopCount = 0;
+int deadlockCheckMaxCount = 10;
+int thread1Complete = 0;
+int thread2Complete = 0;
 
 void *grabRsrcs(void *threadp)
 {
    threadParams_t *threadParams = (threadParams_t *)threadp;
    int threadIdx = threadParams->threadIdx;
 
+   /* Delay based on randomized input value */
+   sleep(threadParams->delaySec);
 
    if(threadIdx == THREAD_1)
    {
@@ -51,6 +72,7 @@ void *grabRsrcs(void *threadp)
      pthread_mutex_unlock(&rsrcB);
      pthread_mutex_unlock(&rsrcA);
      printf("THREAD 1 done\n");
+     thread1Complete = 1;
    }
    else
    {
@@ -65,6 +87,7 @@ void *grabRsrcs(void *threadp)
      pthread_mutex_unlock(&rsrcA);
      pthread_mutex_unlock(&rsrcB);
      printf("THREAD 2 done\n");
+     thread2Complete = 1;
    }
    pthread_exit(NULL);
 }
@@ -97,6 +120,7 @@ int main (int argc, char *argv[])
 
    printf("Creating thread %d\n", THREAD_1);
    threadParams[THREAD_1].threadIdx=THREAD_1;
+   threadParams[THREAD_1].delaySec=0;
    rc = pthread_create(&threads[0], NULL, grabRsrcs, (void *)&threadParams[THREAD_1]);
    if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
    printf("Thread 1 spawned\n");
@@ -111,12 +135,59 @@ int main (int argc, char *argv[])
 
    printf("Creating thread %d\n", THREAD_2);
    threadParams[THREAD_2].threadIdx=THREAD_2;
+   threadParams[THREAD_2].delaySec=0;
    rc = pthread_create(&threads[1], NULL, grabRsrcs, (void *)&threadParams[THREAD_2]);
    if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
    printf("Thread 2 spawned\n");
 
    printf("rsrcACnt=%d, rsrcBCnt=%d\n", rsrcACnt, rsrcBCnt);
    printf("will try to join CS threads unless they deadlock\n");
+
+   /* 
+    * Monitor if deadlock has occurred by checking to see if both threads execute for an extended period of time
+    * without either completing. If deadlock detected, then cancel both threads, unlock mutexes, and restart
+    * with a random delay before each thread takes their first mutex.
+    * 
+    * A better implementation of this would be run this logic in a parent thread which creates the 2 threads below.
+    * This simple implmentation will work for this example demonstration.
+    */
+    do {
+      /* Deadlock detected, cancel both threads and re-create with random delay added to start of both */
+      if (deadlockCheckLoopCount >= deadlockCheckMaxCount) {
+        printf("ERROR: Deadlock detected!\n");
+
+        printf("Thread 1 cancel\n");
+        pthread_cancel(&threads[0]);
+        printf("Thread 2 cancel\n");
+        pthread_cancel(&threads[1]);
+
+        /* Calculate random delay */
+        threadParams[THREAD_1].delaySec = (rand() % 5);
+        threadParams[THREAD_2].delaySec = (rand() % 5);
+        printf("Random delay for Thread1: %d\n", threadParams[THREAD_1].delaySec);
+        printf("Random delay for Thread2: %d\n", threadParams[THREAD_2].delaySec);
+
+        /* Unlock both mutexes to avoid threads entering deadlock again once re-created */
+        pthread_mutex_unlock(&rsrcB);
+        pthread_mutex_unlock(&rsrcA);
+
+        /* Re-start both threads */
+        printf("Thread 1 restart with delay %d seconds\n", threadParams[THREAD_1].delaySec);
+        rc = pthread_create(&threads[0], NULL, grabRsrcs, (void *)&threadParams[THREAD_1]);
+        if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
+
+        printf("Thread 2 restart\n");
+        printf("Thread 2 restart with delay %d seconds\n", threadParams[THREAD_2].delaySec);
+        rc = pthread_create(&threads[1], NULL, grabRsrcs, (void *)&threadParams[THREAD_2]);
+        if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
+
+        deadlockCheckLoopCount = 0;
+      }
+
+      printf("Checking Deadlock\n");
+      deadlockCheckLoopCount++;
+      sleep(1);
+    } while((thread1Complete == 0) && (thread2Complete == 0));
 
    if(!safe)
    {
