@@ -8,7 +8,8 @@
  * 
  * Resources and References:
  *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/code/example-sync-updated-2/deadlock.c
- *  - https://man7.org/linux/man-pages/man3/pthread_cancel.3.html
+ *  - https://linux.die.net/man/3/pthread_exitA
+ *  - https://www.tutorialspoint.com/c_standard_library/c_function_rand.htm
  */
 
 #include <pthread.h>
@@ -50,6 +51,7 @@ int deadlockCheckLoopCount = 0;
 int deadlockCheckMaxCount = 10;
 int thread1Complete = 0;
 int thread2Complete = 0;
+int deadlockFlag = 0;
 
 void *grabRsrcs(void *threadp)
 {
@@ -67,6 +69,14 @@ void *grabRsrcs(void *threadp)
      if(!noWait) sleep(1);
      printf("THREAD 1 got A, trying for B\n");
      pthread_mutex_lock(&rsrcB);
+
+    /* If deadlockFlag set, exit this thread */
+    if(deadlockFlag) {
+      rsrcACnt--;
+      printf("THREAD 1 Deadlocked, exiting\n");
+      pthread_exit(NULL);
+    }
+
      rsrcBCnt++;
      printf("THREAD 1 got A and B\n");
      pthread_mutex_unlock(&rsrcB);
@@ -82,6 +92,14 @@ void *grabRsrcs(void *threadp)
      if(!noWait) sleep(1);
      printf("THREAD 2 got B, trying for A\n");
      pthread_mutex_lock(&rsrcA);
+
+    /* If deadlockFlag set, exit this thread */
+    if(deadlockFlag) {
+      rsrcBCnt--;
+      printf("THREAD 2 Deadlocked, exiting\n");
+      pthread_exit(NULL);
+    }
+
      rsrcACnt++;
      printf("THREAD 2 got B and A\n");
      pthread_mutex_unlock(&rsrcA);
@@ -145,7 +163,7 @@ int main (int argc, char *argv[])
 
    /* 
     * Monitor if deadlock has occurred by checking to see if both threads execute for an extended period of time
-    * without either completing. If deadlock detected, then cancel both threads, unlock mutexes, and restart
+    * without either completing. If deadlock detected, set deadlock Flag, unlock mutexes, and restart
     * with a random delay before each thread takes their first mutex.
     * 
     * A better implementation of this would be run this logic in a parent thread which creates the 2 threads below.
@@ -155,21 +173,30 @@ int main (int argc, char *argv[])
       /* Deadlock detected, cancel both threads and re-create with random delay added to start of both */
       if (deadlockCheckLoopCount >= deadlockCheckMaxCount) {
         printf("ERROR: Deadlock detected!\n");
+        /* Set global deadlock flag */
+        deadlockFlag = 1;
 
-        printf("Thread 1 cancel\n");
-        pthread_cancel(&threads[0]);
-        printf("Thread 2 cancel\n");
-        pthread_cancel(&threads[1]);
+        /* Unlock both mutexes to allow both threads to exit with deadlockFlag set*/
+        pthread_mutex_unlock(&rsrcB);
+        pthread_mutex_unlock(&rsrcA);
 
-        /* Calculate random delay */
+        /* Wait for both threads to exit, then clear deadlock flag */
+        pthread_join(threads[0], NULL);
+        pthread_join(threads[1], NULL);
+        deadlockFlag = 0;
+
+        /* Release previously held locks (first mutex taken by each thread) */
+        pthread_mutex_unlock(&rsrcB);
+        pthread_mutex_unlock(&rsrcA);
+
+        /* Calculate random delay values */
+        srand(time(NULL));
         threadParams[THREAD_1].delaySec = (rand() % 5);
+        sleep(1); /* Delay to ensure random value generated */
+        srand(time(NULL));
         threadParams[THREAD_2].delaySec = (rand() % 5);
         printf("Random delay for Thread1: %d\n", threadParams[THREAD_1].delaySec);
         printf("Random delay for Thread2: %d\n", threadParams[THREAD_2].delaySec);
-
-        /* Unlock both mutexes to avoid threads entering deadlock again once re-created */
-        pthread_mutex_unlock(&rsrcB);
-        pthread_mutex_unlock(&rsrcA);
 
         /* Re-start both threads */
         printf("Thread 1 restart with delay %d seconds\n", threadParams[THREAD_1].delaySec);
@@ -188,6 +215,8 @@ int main (int argc, char *argv[])
       deadlockCheckLoopCount++;
       sleep(1);
     } while((thread1Complete == 0) && (thread2Complete == 0));
+
+    printf("DONE Checking Deadlock\n");
 
    if(!safe)
    {
