@@ -3,7 +3,8 @@
 #include <sched.h>
 #include <time.h>
 #include <stdlib.h>
-#include <errno.h>
+#include <string.h>
+#include <unistd.h>
 
 #define NUM_THREADS 2
 #define THREAD_1 1
@@ -12,154 +13,72 @@
 typedef struct
 {
     int threadIdx;
+    int delaySec;
 } threadParams_t;
 
 
-threadParams_t threadParams[NUM_THREADS];
 pthread_t threads[NUM_THREADS];
+threadParams_t threadParams[NUM_THREADS];
+
 struct sched_param nrt_param;
 
+// On the Raspberry Pi, the MUTEX semaphores must be statically initialized
+//
+// This works on all Linux platforms, but dynamic initialization does not work
+// on the R-Pi in particular as of June 2020.
+//
 pthread_mutex_t rsrcA = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t rsrcB = PTHREAD_MUTEX_INITIALIZER;
 
 volatile int rsrcACnt=0, rsrcBCnt=0, noWait=0;
 
+int deadlockCheckLoopCount = 0;
+int deadlockCheckMaxCount = 10;
+int thread1Complete = 0;
+int thread2Complete = 0;
+
 
 void *grabRsrcs(void *threadp)
 {
-   struct timespec timeNow;
-   struct timespec rsrcA_timeout;
-   struct timespec rsrcB_timeout;
-   int rc;
    threadParams_t *threadParams = (threadParams_t *)threadp;
    int threadIdx = threadParams->threadIdx;
 
-   if(threadIdx == THREAD_1) printf("Thread 1 started\n");
-   else if(threadIdx == THREAD_2) printf("Thread 2 started\n");
-   else printf("Unknown thread started\n");
-
-   clock_gettime(CLOCK_REALTIME, &timeNow);
-
-   rsrcA_timeout.tv_sec = timeNow.tv_sec + 2;
-   rsrcA_timeout.tv_nsec = timeNow.tv_nsec;
-   rsrcB_timeout.tv_sec = timeNow.tv_sec + 3;
-   rsrcB_timeout.tv_nsec = timeNow.tv_nsec;
-
+   /* Delay based on randomized input value */
+   sleep(threadParams->delaySec);
 
    if(threadIdx == THREAD_1)
    {
-     printf("THREAD 1 grabbing resource A @ %d sec and %d nsec\n", (int)timeNow.tv_sec, (int)timeNow.tv_nsec);
-     //if((rc=pthread_mutex_timedlock(&rsrcA, &rsrcA_timeout)) != 0)
-     if((rc=pthread_mutex_lock(&rsrcA)) != 0)
-     {
-         printf("Thread 1 ERROR\n");
-         pthread_exit(NULL);
-     }
-     else
-     {
-         printf("Thread 1 GOT A\n");
-         rsrcACnt++;
-         printf("rsrcACnt=%d, rsrcBCnt=%d\n", rsrcACnt, rsrcBCnt);
-     }
-
-     // if unsafe test, immediately try to acquire rsrcB
-     if(!noWait) usleep(1000000);
-
-     clock_gettime(CLOCK_REALTIME, &timeNow);
-     rsrcB_timeout.tv_sec = timeNow.tv_sec + 3;
-     rsrcB_timeout.tv_nsec = timeNow.tv_nsec;
-
-     printf("THREAD 1 got A, trying for B @ %d sec and %d nsec\n", (int)timeNow.tv_sec, (int)timeNow.tv_nsec);
-
-     rc=pthread_mutex_timedlock(&rsrcB, &rsrcB_timeout);
-     //rc=pthread_mutex_lock(&rsrcB);
-     if(rc == 0)
-     {
-         clock_gettime(CLOCK_REALTIME, &timeNow);
-         printf("Thread 1 GOT B @ %d sec and %d nsec with rc=%d\n", (int)timeNow.tv_sec, (int)timeNow.tv_nsec, rc);
-         rsrcBCnt++;
-         printf("rsrcACnt=%d, rsrcBCnt=%d\n", rsrcACnt, rsrcBCnt);
-     }
-     else if(rc == ETIMEDOUT)
-     {
-         printf("Thread 1 TIMEOUT ERROR\n");
-         rsrcACnt--;
-         pthread_mutex_unlock(&rsrcA);
-         pthread_exit(NULL);
-     }
-     else
-     {
-         printf("Thread 1 ERROR\n");
-         rsrcACnt--;
-         pthread_mutex_unlock(&rsrcA);
-         pthread_exit(NULL);
-     }
-
+     printf("THREAD 1 grabbing resources\n");
+     pthread_mutex_lock(&rsrcA);
+     rsrcACnt++;
+     if(!noWait) sleep(1);
+     printf("THREAD 1 got A, trying for B\n");
+     pthread_mutex_lock(&rsrcB);
+     rsrcBCnt++;
      printf("THREAD 1 got A and B\n");
-     rsrcBCnt--;
      pthread_mutex_unlock(&rsrcB);
-     rsrcACnt--;
      pthread_mutex_unlock(&rsrcA);
      printf("THREAD 1 done\n");
+     thread1Complete = 1;
    }
-
    else
    {
-     printf("THREAD 2 grabbing resource B @ %d sec and %d nsec\n", (int)timeNow.tv_sec, (int)timeNow.tv_nsec);
-     //if((rc=pthread_mutex_timedlock(&rsrcB, &rsrcB_timeout)) != 0)
-     if((rc=pthread_mutex_lock(&rsrcB)) != 0)
-     {
-         printf("Thread 2 ERROR\n");
-         pthread_exit(NULL);
-     }
-     else
-     {
-         printf("Thread 2 GOT B\n");
-         rsrcBCnt++;
-         printf("rsrcACnt=%d, rsrcBCnt=%d\n", rsrcACnt, rsrcBCnt);
-     }
-
-     // if unsafe test, immediately try to acquire rsrcB
-     if(!noWait) usleep(1000000);
-
-     clock_gettime(CLOCK_REALTIME, &timeNow);
-     rsrcA_timeout.tv_sec = timeNow.tv_sec + 2;
-     rsrcA_timeout.tv_nsec = timeNow.tv_nsec;
-
-     printf("THREAD 2 got B, trying for A @ %d sec and %d nsec\n", (int)timeNow.tv_sec, (int)timeNow.tv_nsec);
-     rc=pthread_mutex_timedlock(&rsrcA, &rsrcA_timeout);
-     //rc=pthread_mutex_lock(&rsrcA);
-     if(rc == 0)
-     {
-         clock_gettime(CLOCK_REALTIME, &timeNow);
-         printf("Thread 2 GOT A @ %d sec and %d nsec with rc=%d\n", (int)timeNow.tv_sec, (int)timeNow.tv_nsec, rc);
-         rsrcACnt++;
-         printf("rsrcACnt=%d, rsrcBCnt=%d\n", rsrcACnt, rsrcBCnt);
-     }
-     else if(rc == ETIMEDOUT)
-     {
-         printf("Thread 2 TIMEOUT ERROR\n");
-         rsrcBCnt--;
-         pthread_mutex_unlock(&rsrcB);
-         pthread_exit(NULL);
-     }
-     else
-     {
-         printf("Thread 2 ERROR\n");
-         rsrcBCnt--;
-         pthread_mutex_unlock(&rsrcB);
-         pthread_exit(NULL);
-     }
-
+     printf("THREAD 2 grabbing resources\n");
+     pthread_mutex_lock(&rsrcB);
+     rsrcBCnt++;
+     if(!noWait) sleep(1);
+     printf("THREAD 2 got B, trying for A\n");
+     pthread_mutex_lock(&rsrcA);
+     rsrcACnt++;
      printf("THREAD 2 got B and A\n");
-     rsrcACnt--;
      pthread_mutex_unlock(&rsrcA);
-     rsrcBCnt--;
      pthread_mutex_unlock(&rsrcB);
      printf("THREAD 2 done\n");
+     thread2Complete = 1;
    }
    pthread_exit(NULL);
 }
+
 
 int main (int argc, char *argv[])
 {
@@ -185,40 +104,80 @@ int main (int argc, char *argv[])
      printf("Usage: deadlock [safe|race|unsafe]\n");
    }
 
-   // Set default protocol for mutex which is unlocked to start
-   pthread_mutex_init(&rsrcA, NULL);
-   pthread_mutex_init(&rsrcB, NULL);
 
    printf("Creating thread %d\n", THREAD_1);
    threadParams[THREAD_1].threadIdx=THREAD_1;
+   threadParams[THREAD_1].delaySec=0;
    rc = pthread_create(&threads[0], NULL, grabRsrcs, (void *)&threadParams[THREAD_1]);
    if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
+   printf("Thread 1 spawned\n");
 
    if(safe) // Make sure Thread 1 finishes with both resources first
    {
      if(pthread_join(threads[0], NULL) == 0)
-       printf("Thread 1 joined to main\n");
+       printf("Thread 1: %x done\n", (unsigned int)threads[0]);
      else
        perror("Thread 1");
    }
 
    printf("Creating thread %d\n", THREAD_2);
    threadParams[THREAD_2].threadIdx=THREAD_2;
+   threadParams[THREAD_2].delaySec=0;
    rc = pthread_create(&threads[1], NULL, grabRsrcs, (void *)&threadParams[THREAD_2]);
    if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
+   printf("Thread 2 spawned\n");
 
-   printf("will try to join both CS threads unless they deadlock\n");
+   printf("rsrcACnt=%d, rsrcBCnt=%d\n", rsrcACnt, rsrcBCnt);
+   printf("will try to join CS threads unless they deadlock\n");
+
+   /* 
+    * Monitor if deadlock has occurred by checking to see if both threads execute for an extended period of time
+    * without either completing. If 
+    */
+    do {
+      /* Deadlock detected, cancel both threads and re-create with random delay */
+      if (deadlockCheckLoopCount >= deadlockCheckMaxCount) {
+        printf("ERROR: Deadlock detected!\n");
+
+        printf("Thread 1 cancel\n");
+        pthread_cancel(&threads[0]);
+        printf("Thread 2 cancel\n");
+        pthread_cancel(&threads[1]);
+
+        threadParams[THREAD_1].delaySec = (rand() % 5);
+        threadParams[THREAD_2].delaySec = (rand() % 5);
+
+        pthread_mutex_unlock(&rsrcB);
+        pthread_mutex_unlock(&rsrcA);
+
+        /* Re-start both threads */
+        printf("Thread 1 restart\n");
+        rc = pthread_create(&threads[0], NULL, grabRsrcs, (void *)&threadParams[THREAD_1]);
+        if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
+
+        printf("Thread 2 restart\n");
+        rc = pthread_create(&threads[1], NULL, grabRsrcs, (void *)&threadParams[THREAD_2]);
+        if (rc) {printf("ERROR; pthread_create() rc is %d\n", rc); perror(NULL); exit(-1);}
+
+        deadlockCheckLoopCount = 0;
+      }
+
+      /* */
+      printf("Checking Deadlock\n");
+      deadlockCheckLoopCount++;
+      sleep(1);
+    } while((thread1Complete == 0) && (thread2Complete == 0));
 
    if(!safe)
    {
      if(pthread_join(threads[0], NULL) == 0)
-       printf("Thread 1 joined to main\n");
+       printf("Thread 1: %x done\n", (unsigned int)threads[0]);
      else
        perror("Thread 1");
    }
 
    if(pthread_join(threads[1], NULL) == 0)
-     printf("Thread 2 joined to main\n");
+     printf("Thread 2: %x done\n", (unsigned int)threads[1]);
    else
      perror("Thread 2");
 
