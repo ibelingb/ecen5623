@@ -34,8 +34,8 @@
 
 /* POSIX thread declarations and scheduling attributes */
 pthread_t threads[NUM_THREADS];
-pthread_mutex_t sharedMemMutex;
-pthread_mutex_t newDataMutex;
+pthread_mutex_t sharedMemMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t newDataMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_attr_t schedAttr;
 struct sched_param schedParam;
 int rtPrioLow;
@@ -63,9 +63,10 @@ static struct timespec read_thread_timeout = {READ_THREAD_SEC_TIME, READ_THREAD_
  */
 void *updatePositionAttitudeState()
 {
+    pthread_mutex_lock(&newDataMutex);
+
     while (1) 
     {
-
         /* Lock/Unlock critical section before/after updating global data */
         /* Update global data */
         pthread_mutex_lock(&sharedMemMutex);
@@ -79,12 +80,13 @@ void *updatePositionAttitudeState()
         pthread_mutex_unlock(&sharedMemMutex);
 
         /* New Data available, unlock newDataMutex to signal ReadThread */
-        pthread_mutex_lock(&newDataMutex);
+        //pthread_mutex_unlock(&newDataMutex);
+        //pthread_mutex_lock(&newDataMutex);
         
         // TODO - delay needed here?
 
         /* Lock the new data mutex while waiting for the next data sample to occur */
-        pthread_mutex_lock(&newDataMutex);
+        //pthread_mutex_lock(&newDataMutex);
         nanosleep(&write_thread_sleep_time, &write_thread_sleep_time);
     }
 }
@@ -97,15 +99,18 @@ void *updatePositionAttitudeState()
 void *readPositionAttitudeState() {
     navData_t localData = {0};
     int newDataAvailable = 0;
-    //struct timespec timeSampled;
+    struct timespec readDataTimestamp;
 
     while (1)
     {
         /* Lock/Unlock critical section before/after read from global data */
         /* Copy global data into local data struct */
-        newDataAvailable = pthread_mutex_timedlock(&sharedMemMutex, &read_thread_timeout);
+        newDataAvailable = pthread_mutex_timedlock(&newDataMutex, &read_thread_timeout);
+        newDataAvailable = 0;
 
         if(newDataAvailable == 0) {
+            printf("new data!\n"); // remove
+
             pthread_mutex_lock(&sharedMemMutex);
             memcpy(&localData, &globalData, sizeof(navData_t));
             pthread_mutex_unlock(&sharedMemMutex);
@@ -127,8 +132,9 @@ void *readPositionAttitudeState() {
                     localData.pitch,
                     localData.yaw);
         } else {
-            //clock_gettime(CLOCK_REALTIME, &globalData.timeSampled);
-            printf("No new data available at time: %ld sec, %ld nsec\n", localData.timeSampled.tv_sec, localData.timeSampled.tv_sec);
+            sleep(1);
+            clock_gettime(CLOCK_REALTIME, &readDataTimestamp);
+            printf("No new data available at time: %ld sec, %ld nsec\n", readDataTimestamp.tv_sec, readDataTimestamp.tv_sec);
         }
     }
 }
@@ -165,20 +171,25 @@ int main (int argc, char *argv[])
    rtPrioHigh = sched_get_priority_min(SCHED_POLICY) + 2;
 
    pthread_mutex_init(&sharedMemMutex, NULL);
+   pthread_mutex_init(&newDataMutex, NULL);
 
     /* Create threads, setting priority of Nav data write thread higher than the data read thread */
-   schedParam.sched_priority = rtPrioLow;
-   pthread_attr_setschedparam(&schedAttr, &schedParam);
-   pthread_create(&threads[LOW_PRIO_SERVICE], &schedAttr, readPositionAttitudeState, (void *)NULL);
-
    schedParam.sched_priority = rtPrioHigh;
    pthread_attr_setschedparam(&schedAttr, &schedParam);
    pthread_create(&threads[HIGH_PRIO_SERVICE], &schedAttr, updatePositionAttitudeState, (void *)NULL);
+
+   /* Brief sleep to allow mutexes to be properly locked to avoid deadlock */
+   sleep(2);
+
+   schedParam.sched_priority = rtPrioLow;
+   pthread_attr_setschedparam(&schedAttr, &schedParam);
+   pthread_create(&threads[LOW_PRIO_SERVICE], &schedAttr, readPositionAttitudeState, (void *)NULL);
 
    for(i=0;i<NUM_THREADS;i++)
        pthread_join(threads[i], NULL);
 
     pthread_mutex_destroy(&sharedMemMutex);
+    pthread_mutex_destroy(&newDataMutex);
 
     return 0;
 }
