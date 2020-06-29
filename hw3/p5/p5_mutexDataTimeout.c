@@ -1,17 +1,18 @@
-/* p2_mutexThreadSync.c
+/* p5_mutexDatTimeout.c
  * ECEN5623 - Real-Time Embedded Systems
  * Author: Brian Ibeling
- * Date: 6/24/2020
+ * Date: 6/29/2020
  *
- * Code to demonstrate the use of Mutex sync between multiple threads of differing priorities.
- * A global data struct is shared between multiple threads, one which continuously increments
- * the data values and the other which reads and prints the global data.
+ * Code to demonstrate the use of Mutex timeout with a pThread waiting for a signal from 
+ * a mutex semaphore. If unable to lock to mutex in a 10 second window, thread unblocks
+ * and prints a timeout message to the user.
  * 
  * References and notes used in this code:
  *  - https://computing.llnl.gov/tutorials/pthreads/
  *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/simplethread/pthread.c
  *  - https://linux.die.net/man/3/pthread_mutex_lock
  *  - http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/code/example-sync-updated-2/pthread3.c
+ *  - https://linux.die.net/man/3/pthread_mutex_timedlock
 */
 /*----------------------------------------------------------------*/
 #include <pthread.h>
@@ -22,18 +23,19 @@
 #include <unistd.h>
 #include <sys/time.h>
 
-#define NUM_THREADS 2
+#define NUM_THREADS 1
 #define LOW_PRIO_SERVICE 0
 #define HIGH_PRIO_SERVICE 1
 #define SCHED_POLICY SCHED_FIFO
-#define WRITE_THREAD_SEC_TIME 0
-#define WRITE_THREAD_NSEC_TIME 1000000
-#define READ_THREAD_SEC_TIME 0
-#define READ_THREAD_NSEC_TIME 1000000
+#define WRITE_THREAD_SEC_TIME 3
+#define WRITE_THREAD_NSEC_TIME 0
+#define READ_THREAD_SEC_TIME 5
+#define READ_THREAD_NSEC_TIME 0
 
 /* POSIX thread declarations and scheduling attributes */
 pthread_t threads[NUM_THREADS];
 pthread_mutex_t sharedMemMutex;
+pthread_mutex_t newDataMutex;
 pthread_attr_t schedAttr;
 struct sched_param schedParam;
 int rtPrioLow;
@@ -52,7 +54,7 @@ typedef struct {
 
 navData_t globalData = {0};
 static struct timespec write_thread_sleep_time = {WRITE_THREAD_SEC_TIME, WRITE_THREAD_NSEC_TIME};
-static struct timespec read_thread_sleep_time = {READ_THREAD_SEC_TIME, READ_THREAD_NSEC_TIME};
+static struct timespec read_thread_timeout = {READ_THREAD_SEC_TIME, READ_THREAD_NSEC_TIME};
 
 /*----------------------------------------------------------------*/
 /* Thread function which continuously updates global data, locking and unlocking the shared mutex
@@ -63,6 +65,7 @@ void *updatePositionAttitudeState()
 {
     while (1) 
     {
+
         /* Lock/Unlock critical section before/after updating global data */
         /* Update global data */
         pthread_mutex_lock(&sharedMemMutex);
@@ -75,44 +78,58 @@ void *updatePositionAttitudeState()
         globalData.yaw     += 0.1;
         pthread_mutex_unlock(&sharedMemMutex);
 
+        /* New Data available, unlock newDataMutex to signal ReadThread */
+        pthread_mutex_lock(&newDataMutex);
+        
+        // TODO - delay needed here?
+
+        /* Lock the new data mutex while waiting for the next data sample to occur */
+        pthread_mutex_lock(&newDataMutex);
         nanosleep(&write_thread_sleep_time, &write_thread_sleep_time);
     }
 }
 /*----------------------------------------------------------------*/
 /* Thread function which continuously reads global data, locking and unlocking the shared mutex
- * immediately before and after each read event. Thread loops and sleeps on set READ_THREAD_SEC_TIME 
- * and READ_THREAD_NSEC_TIME time internal.
+ * immediately before and after each read event. Thread waits on a semaphore mutex and if data 
+ * no received within (READ_THREAD_SEC_TIME + READ_THREAD_NSEC_TIME) time internal, a timeout 
+ * message is printed and the thread loops again.
  */
 void *readPositionAttitudeState() {
     navData_t localData = {0};
+    int newDataAvailable = 0;
+    //struct timespec timeSampled;
 
     while (1)
     {
         /* Lock/Unlock critical section before/after read from global data */
         /* Copy global data into local data struct */
-        pthread_mutex_lock(&sharedMemMutex);
-        memcpy(&localData, &globalData, sizeof(navData_t));
-        pthread_mutex_unlock(&sharedMemMutex);
+        newDataAvailable = pthread_mutex_timedlock(&sharedMemMutex, &read_thread_timeout);
 
-        /* Print data copied from global data struct */
-        printf("Reporting Position and Attitude data:\n \
-                Time: %ld, %ld\n \
-                Accel_X: %f\n \
-                Accel_Y: %f\n \
-                Accel_Z: %f\n \
-                Roll: %f\n \
-                Pitch: %f\n \
-                Yaw: %f\n",
-                localData.timeSampled.tv_sec,
-                localData.timeSampled.tv_nsec,
-                localData.accel_x,
-                localData.accel_y,
-                localData.accel_z,
-                localData.roll,
-                localData.pitch,
-                localData.yaw);
-
-        nanosleep(&read_thread_sleep_time, &read_thread_sleep_time);
+        if(newDataAvailable == 0) {
+            pthread_mutex_lock(&sharedMemMutex);
+            memcpy(&localData, &globalData, sizeof(navData_t));
+            pthread_mutex_unlock(&sharedMemMutex);
+            /* Print data copied from global data struct */
+            printf("Reporting Position and Attitude data:\n \
+                    Time: %ld, %ld\n \
+                    Accel_X: %f\n \
+                    Accel_Y: %f\n \
+                    Accel_Z: %f\n \
+                    Roll: %f\n \
+                    Pitch: %f\n \
+                    Yaw: %f\n",
+                    localData.timeSampled.tv_sec,
+                    localData.timeSampled.tv_nsec,
+                    localData.accel_x,
+                    localData.accel_y,
+                    localData.accel_z,
+                    localData.roll,
+                    localData.pitch,
+                    localData.yaw);
+        } else {
+            //clock_gettime(CLOCK_REALTIME, &globalData.timeSampled);
+            printf("No new data available at time: %ld sec, %ld nsec\n", localData.timeSampled.tv_sec, localData.timeSampled.tv_sec);
+        }
     }
 }
 
