@@ -23,13 +23,13 @@
 #include <unistd.h>
 #include <sys/time.h>
 
-#define NUM_THREADS 1
+#define NUM_THREADS 2
 #define LOW_PRIO_SERVICE 0
 #define HIGH_PRIO_SERVICE 1
 #define SCHED_POLICY SCHED_FIFO
 #define WRITE_THREAD_SEC_TIME 3
 #define WRITE_THREAD_NSEC_TIME 0
-#define READ_THREAD_SEC_TIME 5
+#define READ_THREAD_SEC_TIME 10
 #define READ_THREAD_NSEC_TIME 0
 
 /* POSIX thread declarations and scheduling attributes */
@@ -67,6 +67,8 @@ void *updatePositionAttitudeState()
 
     while (1) 
     {
+        printf("WriteThreadStart\n");
+
         /* Lock/Unlock critical section before/after updating global data */
         /* Update global data */
         pthread_mutex_lock(&sharedMemMutex);
@@ -80,10 +82,10 @@ void *updatePositionAttitudeState()
         pthread_mutex_unlock(&sharedMemMutex);
 
         /* New Data available, unlock newDataMutex to signal ReadThread */
-        //pthread_mutex_unlock(&newDataMutex);
-        //pthread_mutex_lock(&newDataMutex);
+        pthread_mutex_unlock(&newDataMutex);
         
         // TODO - delay needed here?
+        //sleep(1);
 
         /* Lock the new data mutex while waiting for the next data sample to occur */
         //pthread_mutex_lock(&newDataMutex);
@@ -103,10 +105,15 @@ void *readPositionAttitudeState() {
 
     while (1)
     {
+        printf("ReadThreadStart\n");
+        clock_gettime(CLOCK_REALTIME, &readDataTimestamp);
+        read_thread_timeout.tv_sec = readDataTimestamp.tv_sec + READ_THREAD_SEC_TIME;
+        read_thread_timeout.tv_nsec = readDataTimestamp.tv_nsec + READ_THREAD_NSEC_TIME;
+
         /* Lock/Unlock critical section before/after read from global data */
         /* Copy global data into local data struct */
+        pthread_mutex_lock(&newDataMutex);
         newDataAvailable = pthread_mutex_timedlock(&newDataMutex, &read_thread_timeout);
-        newDataAvailable = 0;
 
         if(newDataAvailable == 0) {
             printf("new data!\n"); // remove
@@ -132,9 +139,8 @@ void *readPositionAttitudeState() {
                     localData.pitch,
                     localData.yaw);
         } else {
-            sleep(1);
             clock_gettime(CLOCK_REALTIME, &readDataTimestamp);
-            printf("No new data available at time: %ld sec, %ld nsec\n", readDataTimestamp.tv_sec, readDataTimestamp.tv_sec);
+            printf("No new data available at time: %ld sec, %ld nsec\n", readDataTimestamp.tv_sec, readDataTimestamp.tv_nsec);
         }
     }
 }
