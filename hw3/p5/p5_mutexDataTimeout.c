@@ -1,11 +1,11 @@
-/* p5_mutexDatTimeout.c
+/* p5_mutexDataTimeout.c
  * ECEN5623 - Real-Time Embedded Systems
  * Author: Brian Ibeling
  * Date: 6/29/2020
  *
- * Code to demonstrate the use of Mutex timeout with a pThread waiting for a signal from 
- * a mutex semaphore. If unable to lock to mutex in a 10 second window, thread unblocks
- * and prints a timeout message to the user.
+ * Code to demonstrate the use of mutexTimeout with a Read pThread blocking until a Write pThread 
+ * unlocks it, signaling new data is available. If unable to lock to mutex in a 10 second window, 
+ * thread unblocks and prints a timeout message to the user.
  * 
  * References and notes used in this code:
  *  - https://computing.llnl.gov/tutorials/pthreads/
@@ -183,9 +183,6 @@ int main (int argc, char *argv[])
    schedParam.sched_priority = rtPrioHigh;
    pthread_attr_setschedparam(&schedAttr, &schedParam);
    pthread_create(&threads[HIGH_PRIO_SERVICE], &schedAttr, updatePositionAttitudeState, (void *)NULL);
-
-   /* Brief sleep to allow mutexes to be properly locked to avoid deadlock */
-   //sleep(2);
 
    schedParam.sched_priority = rtPrioLow;
    pthread_attr_setschedparam(&schedAttr, &schedParam);
