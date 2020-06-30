@@ -27,7 +27,7 @@
 #define LOW_PRIO_SERVICE 0
 #define HIGH_PRIO_SERVICE 1
 #define SCHED_POLICY SCHED_FIFO
-#define WRITE_THREAD_SEC_TIME 3
+#define WRITE_THREAD_SEC_TIME 13
 #define WRITE_THREAD_NSEC_TIME 0
 #define READ_THREAD_SEC_TIME 10
 #define READ_THREAD_NSEC_TIME 0
@@ -84,11 +84,7 @@ void *updatePositionAttitudeState()
         /* New Data available, unlock newDataMutex to signal ReadThread */
         pthread_mutex_unlock(&newDataMutex);
         
-        // TODO - delay needed here?
-        //sleep(1);
-
         /* Lock the new data mutex while waiting for the next data sample to occur */
-        //pthread_mutex_lock(&newDataMutex);
         nanosleep(&write_thread_sleep_time, &write_thread_sleep_time);
     }
 }
@@ -100,27 +96,29 @@ void *updatePositionAttitudeState()
  */
 void *readPositionAttitudeState() {
     navData_t localData = {0};
-    int newDataAvailable = 0;
+    int newDataAvailableLockout = 0;
     struct timespec readDataTimestamp;
 
     while (1)
     {
         printf("ReadThreadStart\n");
+
+        /* Update read data lockout time */
         clock_gettime(CLOCK_REALTIME, &readDataTimestamp);
         read_thread_timeout.tv_sec = readDataTimestamp.tv_sec + READ_THREAD_SEC_TIME;
         read_thread_timeout.tv_nsec = readDataTimestamp.tv_nsec + READ_THREAD_NSEC_TIME;
 
-        /* Lock/Unlock critical section before/after read from global data */
-        /* Copy global data into local data struct */
-        pthread_mutex_lock(&newDataMutex);
-        newDataAvailable = pthread_mutex_timedlock(&newDataMutex, &read_thread_timeout);
+        /* Lock on newDataMutex until unlocked from writeThread */
+        newDataAvailableLockout = pthread_mutex_timedlock(&newDataMutex, &read_thread_timeout);
 
-        if(newDataAvailable == 0) {
-            printf("new data!\n"); // remove
-
+        if(newDataAvailableLockout == 0) {
+            /* New data written from write thread! */
+            /* Lock/Unlock critical section before/after read from global data */
+            /* Copy global data into local data struct */
             pthread_mutex_lock(&sharedMemMutex);
             memcpy(&localData, &globalData, sizeof(navData_t));
             pthread_mutex_unlock(&sharedMemMutex);
+
             /* Print data copied from global data struct */
             printf("Reporting Position and Attitude data:\n \
                     Time: %ld, %ld\n \
@@ -139,6 +137,7 @@ void *readPositionAttitudeState() {
                     localData.pitch,
                     localData.yaw);
         } else {
+            /* No new data received from timeout reached - print message to user */
             clock_gettime(CLOCK_REALTIME, &readDataTimestamp);
             printf("No new data available at time: %ld sec, %ld nsec\n", readDataTimestamp.tv_sec, readDataTimestamp.tv_nsec);
         }
@@ -176,6 +175,7 @@ int main (int argc, char *argv[])
    rtPrioLow = sched_get_priority_min(SCHED_POLICY) + 1;
    rtPrioHigh = sched_get_priority_min(SCHED_POLICY) + 2;
 
+   /* Initialize Mutexes */
    pthread_mutex_init(&sharedMemMutex, NULL);
    pthread_mutex_init(&newDataMutex, NULL);
 
@@ -185,7 +185,7 @@ int main (int argc, char *argv[])
    pthread_create(&threads[HIGH_PRIO_SERVICE], &schedAttr, updatePositionAttitudeState, (void *)NULL);
 
    /* Brief sleep to allow mutexes to be properly locked to avoid deadlock */
-   sleep(2);
+   //sleep(2);
 
    schedParam.sched_priority = rtPrioLow;
    pthread_attr_setschedparam(&schedAttr, &schedParam);
@@ -194,9 +194,9 @@ int main (int argc, char *argv[])
    for(i=0;i<NUM_THREADS;i++)
        pthread_join(threads[i], NULL);
 
-    pthread_mutex_destroy(&sharedMemMutex);
-    pthread_mutex_destroy(&newDataMutex);
+   pthread_mutex_destroy(&sharedMemMutex);
+   pthread_mutex_destroy(&newDataMutex);
 
-    return 0;
+   return 0;
 }
 /*----------------------------------------------------------------*/
