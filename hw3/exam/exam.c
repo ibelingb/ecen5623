@@ -33,13 +33,12 @@ void *sumValues(void *threadp) {
     int total = 0;
 
     threadParams_t *threadParams = (threadParams_t *)threadp;
-    printf("Start: %d | End: %d\n", threadParams->startNum, threadParams->endNum);
-
     for(i=(threadParams->startNum); i<(threadParams->endNum+1); i++) {
         total += i;
     }
 
     *(threadParams->sum) = total;
+    printf("Start: %d | End: %d | Result: %d\n", threadParams->startNum, threadParams->endNum, total);
 }
 
 
