@@ -38,6 +38,7 @@ void *sumValues(void *threadp) {
     }
 
     *(threadParams->sum) = total;
+
     printf("Start: %d | End: %d | Result: %d\n", threadParams->startNum, threadParams->endNum, total);
 }
 
