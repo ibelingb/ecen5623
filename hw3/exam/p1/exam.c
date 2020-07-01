@@ -8,9 +8,10 @@
 #include <sys/time.h>
 
 #define NUM_THREADS 3
-#define THREAD_1 0
-#define THREAD_2 1
-#define THREAD_3 2
+#define HIGH_PRIORITY_THREAD 0
+#define MED_PRIORITY_THREAD 1
+#define LOW_PRIORITY_THREAD 2
+#define SCHED_POLICY SCHED_FIFO
 
 /* POSIX thread declarations and scheduling attributes */
 pthread_t threads[NUM_THREADS];
@@ -24,9 +25,12 @@ typedef struct
     int startNum;
     int endNum;
     int *sum;
+    int threadNum;
 } threadParams_t;
 
 threadParams_t threadParams[NUM_THREADS];
+pthread_attr_t schedAttr;
+struct sched_param schedParam;
 /*----------------------------------------------------------------*/
 void *sumValues(void *threadp) {
     int i = 0;
@@ -39,7 +43,7 @@ void *sumValues(void *threadp) {
 
     *(threadParams->sum) = total;
 
-    printf("Start: %d | End: %d | Result: %d\n", threadParams->startNum, threadParams->endNum, total);
+    printf("Thread %d Result: %d\n", threadParams->threadNum, total);
 }
 
 
@@ -48,28 +52,59 @@ int main (int argc, char *argv[])
 {
    int i = 0;
    int totalSummed = 0;
+   int maxPriority, minPriority, lowPriority, medPriority, highPriority;
+
+   /* Set Scheduler Policy to FIFO */
+   pthread_attr_init(&schedAttr);
+   pthread_attr_setinheritsched(&schedAttr, PTHREAD_EXPLICIT_SCHED);
+   pthread_attr_setschedpolicy(&schedAttr, SCHED_POLICY);
+
+   /* Set Sched priority to max value */
+   maxPriority = sched_get_priority_max(SCHED_POLICY);
+   schedParam.sched_priority = maxPriority;
+   sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
+
+   /* Capture thread Priorities */
+   minPriority = sched_get_priority_min(SCHED_POLICY);
+   lowPriority  = minPriority + 1;
+   medPriority  = minPriority + 2;
+   highPriority = minPriority + 3;
 
    /* Setup threadParams */
-   threadParams[THREAD_1].startNum = 1;
-   threadParams[THREAD_2].startNum = 100;
-   threadParams[THREAD_3].startNum = 200;
-   threadParams[THREAD_1].endNum = 99;
-   threadParams[THREAD_2].endNum = 199;
-   threadParams[THREAD_3].endNum = 299;
-   threadParams[THREAD_1].sum = &t1_sum;
-   threadParams[THREAD_2].sum = &t2_sum;
-   threadParams[THREAD_3].sum = &t3_sum;
+   threadParams[HIGH_PRIORITY_THREAD].startNum = 1;
+   threadParams[MED_PRIORITY_THREAD].startNum = 100;
+   threadParams[LOW_PRIORITY_THREAD].startNum = 200;
+   threadParams[HIGH_PRIORITY_THREAD].endNum = 99;
+   threadParams[MED_PRIORITY_THREAD].endNum = 199;
+   threadParams[LOW_PRIORITY_THREAD].endNum = 299;
+   threadParams[HIGH_PRIORITY_THREAD].sum = &t1_sum;
+   threadParams[MED_PRIORITY_THREAD].sum = &t2_sum;
+   threadParams[LOW_PRIORITY_THREAD].sum = &t3_sum;
+   threadParams[HIGH_PRIORITY_THREAD].threadNum = HIGH_PRIORITY_THREAD;
+   threadParams[MED_PRIORITY_THREAD].threadNum = MED_PRIORITY_THREAD;
+   threadParams[LOW_PRIORITY_THREAD].threadNum = LOW_PRIORITY_THREAD;
 
-    /* Create threads */
-   pthread_create(&threads[THREAD_1], NULL, sumValues, (void *)&threadParams[THREAD_1]);
-   pthread_create(&threads[THREAD_2], NULL, sumValues, (void *)&threadParams[THREAD_2]);
-   pthread_create(&threads[THREAD_3], NULL, sumValues, (void *)&threadParams[THREAD_3]);
+    /* Create threads, setting priority for each */
+   
+   schedParam.sched_priority = highPriority;
+   pthread_attr_setschedparam(&schedAttr, &schedParam);
+   pthread_create(&threads[HIGH_PRIORITY_THREAD], &schedAttr, sumValues, (void *)&threadParams[HIGH_PRIORITY_THREAD]);
 
+   schedParam.sched_priority = medPriority;
+   pthread_attr_setschedparam(&schedAttr, &schedParam);
+   pthread_create(&threads[MED_PRIORITY_THREAD], &schedAttr, sumValues, (void *)&threadParams[MED_PRIORITY_THREAD]);
+
+   schedParam.sched_priority = lowPriority;
+   pthread_attr_setschedparam(&schedAttr, &schedParam);
+   pthread_create(&threads[LOW_PRIORITY_THREAD], &schedAttr, sumValues, (void *)&threadParams[LOW_PRIORITY_THREAD]);
+   
+   /* Join all threads to sync once all have completed */
    for(i=0;i<NUM_THREADS;i++)
        pthread_join(threads[i], NULL);
 
+    /* Calculate sum of all threads and print */
     totalSummed = t1_sum + t2_sum + t3_sum;
-    printf("Total sum of all values: %ld\n", totalSummed);
+    printf("Sum total of all threads: %ld\n", totalSummed);
 
     return 0;
 }
