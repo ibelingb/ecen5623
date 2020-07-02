@@ -142,10 +142,6 @@ void main(void)
   char pixel = 'A';
   int maxPriority, lowPriority, highPriority;
 
-  /* Cleanup MQs from previous runs */
-  mq_unlink(SNDRCV_MQ);
-  mq_close(SNDRCV_MQ);
-
   /* Set Scheduler Policy to FIFO */
   pthread_attr_init(&schedAttr);
   pthread_attr_setinheritsched(&schedAttr, PTHREAD_EXPLICIT_SCHED);
@@ -198,7 +194,7 @@ void main(void)
 
   /* Cleanup MQs */
   mq_unlink(SNDRCV_MQ);
-  mq_close(SNDRCV_MQ);
+  mq_close(mymq);
 }
 
 /*----------------------------------------------------------------*/

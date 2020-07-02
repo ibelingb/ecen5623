@@ -76,6 +76,10 @@ void *receiver(void *threadp)
     printf("receive: msg %s received with priority = %d, length = %d\n",
            buffer, prio, nbytes);
   }
+
+  /* Cleanup MQ */
+  mq_unlink(SNDRCV_MQ);
+  mq_close(mymq);
 }
 
 static char canned_msg[] = "this is a test, and only a test, in the event of a real emergency, you would be instructed ...";
@@ -103,16 +107,15 @@ void *sender(void *threadp)
     printf("send: message successfully sent\n");
   }
   
+  /* Cleanup MQ */
+  mq_unlink(SNDRCV_MQ);
+  mq_close(mymq);
 }
 
 /*----------------------------------------------------------------*/
 int main(int argc, char *argv[]) {
   int i = 0;
   int maxPriority, lowPriority, highPriority;
-
-  /* Cleanup MQs from previous runs */
-  mq_unlink(SNDRCV_MQ);
-  mq_close(SNDRCV_MQ);
 
    /* Set Scheduler Policy to FIFO */
    pthread_attr_init(&schedAttr);
@@ -143,10 +146,6 @@ int main(int argc, char *argv[]) {
 
    for (i = 0; i < NUM_THREADS; i++)
      pthread_join(threads[i], NULL);
-
-  /* Cleanup MQs */
-  mq_unlink(SNDRCV_MQ);
-  mq_close(SNDRCV_MQ);
 
    return 0;
 }
