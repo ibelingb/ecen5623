@@ -18,18 +18,15 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define ERROR -1
+#define ERROR (-1)
 
 #define NUM_THREADS 2
-#define THREAD_1 0
-#define THREAD_2 1
+#define HIGH_PRIORITY_THREAD 0
+#define LOW_PRIORITY_THREAD 1
 #define SCHED_POLICY SCHED_FIFO
 
 #define SNDRCV_MQ "/heap_send_receive_mq"
-
-struct mq_attr mq_attr;
-static mqd_t mymq;
-static char imagebuff[4096];
+#define MAX_MSG_SIZE 128
 
 /* POSIX thread declarations and scheduling attributes */
 pthread_t threads[NUM_THREADS];
@@ -38,12 +35,27 @@ struct mq_attr mq_attr;
 
 typedef struct
 {
-  int param;
+  int arg1;
+  int arg2;
+  int arg3;
+  int arg4;
+  int arg5;
+  int arg6;
+  int arg7;
+  int arg8;
+  int arg9;
+  int arg10;
 } threadParams_t;
 
 threadParams_t threadParams[NUM_THREADS];
+pthread_attr_t schedAttr;
 struct sched_param schedParam;
 
+struct mq_attr mq_attr;
+static mqd_t mymq;
+static char imagebuff[4096];
+
+/*----------------------------------------------------------------*/
 /* receives pointer to heap, reads it, and deallocate heap memory */
 void *receiver(void *threadp)
 {
@@ -85,7 +97,7 @@ void *receiver(void *threadp)
 
 }
 
-
+/*----------------------------------------------------------------*/
 void *sender(void *threadp)
 {
   char buffer[sizeof(void *)+sizeof(int)];
@@ -123,15 +135,26 @@ void *sender(void *threadp)
   
 }
 
+/*----------------------------------------------------------------*/
 void main(void)
 {
   int i, j;
   char pixel = 'A';
-  int maxPriority;
+  int maxPriority, lowPriority, highPriority;
 
   /* Cleanup MQs from previous runs */
   mq_unlink(SNDRCV_MQ);
   mq_close(SNDRCV_MQ);
+
+  /* Set Scheduler Policy to FIFO */
+  pthread_attr_init(&schedAttr);
+  pthread_attr_setinheritsched(&schedAttr, PTHREAD_EXPLICIT_SCHED);
+  pthread_attr_setschedpolicy(&schedAttr, SCHED_POLICY);
+
+  /* Set Sched priority to max value */
+  maxPriority = sched_get_priority_max(SCHED_POLICY);
+  schedParam.sched_priority = maxPriority;
+  sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
 
   for (i = 0; i < 4096; i += 64)
   {
@@ -154,30 +177,32 @@ void main(void)
   mq_attr.mq_flags = 0;
 
   // note that VxWorks does not deal with permissions?
-  mymq = mq_open(SNDRCV_MQ, O_CREAT | O_RDWR, 0, &mq_attr);
-
+  mymq = mq_open(SNDRCV_MQ, O_CREAT | O_RDWR, S_IRWXU, &mq_attr);
   if (mymq == (mqd_t)ERROR)
     perror("mq_open");
 
-  /* Set Sched priority to max value */
-  maxPriority = sched_get_priority_max(SCHED_POLICY);
-  schedParam.sched_priority = maxPriority;
-  sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
+  /* Define priorities */
+  lowPriority = 80;
+  highPriority = 90;
 
-  pthread_create(&threads[THREAD_1], NULL, receiver, (void *)&threadParams[THREAD_1]);
-  pthread_create(&threads[THREAD_2], NULL, sender, (void *)&threadParams[THREAD_2]);
+  schedParam.sched_priority = highPriority;
+  pthread_attr_setschedparam(&schedAttr, &schedParam);
+  pthread_create(&threads[HIGH_PRIORITY_THREAD], &schedAttr, receiver, (void *)&threadParams[HIGH_PRIORITY_THREAD]);
+
+  schedParam.sched_priority = lowPriority;
+  pthread_attr_setschedparam(&schedAttr, &schedParam);
+  pthread_create(&threads[LOW_PRIORITY_THREAD], &schedAttr, sender, (void *)&threadParams[LOW_PRIORITY_THREAD]);
 
   for (i = 0; i < NUM_THREADS; i++)
-  {
     pthread_join(threads[i], NULL);
-  }
 
   /* Cleanup MQs */
   mq_unlink(SNDRCV_MQ);
   mq_close(SNDRCV_MQ);
 }
 
-/*
+/*----------------------------------------------------------------*/
+/* VxWorks Example
 static int sid, rid;
 
 void heap_mq(void)

@@ -18,11 +18,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define ERROR -1
+#define ERROR (-1)
 
 #define NUM_THREADS 2
-#define THREAD_2 1
-
 #define HIGH_PRIORITY_THREAD 0
 #define LOW_PRIORITY_THREAD 1
 #define SCHED_POLICY SCHED_FIFO
@@ -78,7 +76,6 @@ void *receiver(void *threadp)
     printf("receive: msg %s received with priority = %d, length = %d\n",
            buffer, prio, nbytes);
   }
-    
 }
 
 static char canned_msg[] = "this is a test, and only a test, in the event of a real emergency, you would be instructed ...";
@@ -154,8 +151,7 @@ int main(int argc, char *argv[]) {
    return 0;
 }
 /*----------------------------------------------------------------*/
-
-/*
+/* VxWorks Example
 void mq_demo(void)
 {
 
