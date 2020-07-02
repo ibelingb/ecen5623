@@ -5,11 +5,10 @@ CDEFS=
 CFLAGS= -O3 -g $(INCLUDE_DIRS) $(CDEFS)
 LIBS= -lpthread -lrt
 
-PRODUCT=heap_mq posix_mq
+PRODUCT=heap_mq posix_mq example
 
 HFILES=
-#CFILES= posix_linux_demo.c heap_mq.c
-CFILES= heap_mq.c posix_mq.c
+CFILES= heap_mq.c posix_mq.c example.c
 
 SRCS= ${HFILES} ${CFILES}
 OBJS= ${CFILES:.c=.o}
@@ -25,6 +24,9 @@ heap_mq:	heap_mq.o
 
 posix_mq:	posix_mq.o
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ posix_mq.o $(LIBS)
+
+example:	example.o
+	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ example.o $(LIBS)
 
 depend:
 

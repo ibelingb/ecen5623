@@ -14,6 +14,9 @@
 #include <sys/time.h>
 #include <errno.h>
 #include <mqueue.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #define ERROR -1
 
@@ -22,7 +25,7 @@
 #define THREAD_2 1
 #define SCHED_POLICY SCHED_FIFO
 
-#define SNDRCV_MQ "heap_send_receive_mq"
+#define SNDRCV_MQ "/heap_send_receive_mq"
 
 struct mq_attr mq_attr;
 static mqd_t mymq;
@@ -126,12 +129,18 @@ void main(void)
   char pixel = 'A';
   int maxPriority;
 
-  for(i=0;i<4096;i+=64) {
+  /* Cleanup MQs from previous runs */
+  mq_unlink(SNDRCV_MQ);
+  mq_close(SNDRCV_MQ);
+
+  for (i = 0; i < 4096; i += 64)
+  {
     pixel = 'A';
-    for(j=i;j<i+64;j++) {
+    for (j = i; j < i + 64; j++)
+    {
       imagebuff[j] = (char)pixel++;
     }
-    imagebuff[j-1] = '\n';
+    imagebuff[j - 1] = '\n';
   }
   imagebuff[4095] = '\0';
   imagebuff[63] = '\0';
@@ -140,28 +149,32 @@ void main(void)
 
   // setup common message q attributes
   mq_attr.mq_maxmsg = 100;
-  mq_attr.mq_msgsize = sizeof(void *)+sizeof(int);
+  mq_attr.mq_msgsize = sizeof(void *) + sizeof(int);
 
   mq_attr.mq_flags = 0;
 
   // note that VxWorks does not deal with permissions?
-  mymq = mq_open(SNDRCV_MQ, O_CREAT|O_RDWR, 0, &mq_attr);
+  mymq = mq_open(SNDRCV_MQ, O_CREAT | O_RDWR, 0, &mq_attr);
 
-  if(mymq == (mqd_t)ERROR)
+  if (mymq == (mqd_t)ERROR)
     perror("mq_open");
 
-
-   /* Set Sched priority to max value */
-   maxPriority = sched_get_priority_max(SCHED_POLICY);
-   schedParam.sched_priority = maxPriority;
-   sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
+  /* Set Sched priority to max value */
+  maxPriority = sched_get_priority_max(SCHED_POLICY);
+  schedParam.sched_priority = maxPriority;
+  sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
 
   pthread_create(&threads[THREAD_1], NULL, receiver, (void *)&threadParams[THREAD_1]);
   pthread_create(&threads[THREAD_2], NULL, sender, (void *)&threadParams[THREAD_2]);
 
-  for (i = 0; i < NUM_THREADS; i++) {
+  for (i = 0; i < NUM_THREADS; i++)
+  {
     pthread_join(threads[i], NULL);
   }
+
+  /* Cleanup MQs */
+  mq_unlink(SNDRCV_MQ);
+  mq_close(SNDRCV_MQ);
 }
 
 /*
