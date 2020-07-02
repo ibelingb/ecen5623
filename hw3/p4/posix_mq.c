@@ -5,18 +5,38 @@
 /*                                                                          */
 /*                                                                          */
 /****************************************************************************/
-                                                                    
-#include "msgQLib.h"
-#include "mqueue.h"
-#include "errnoLib.h" 
-#include "ioLib.h" 
 
-#define SNDRCV_MQ "send_receive_mq"
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <sched.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <mqueue.h>
+
+#define ERROR -1
+
+#define NUM_THREADS 2
+#define THREAD_1 0
+#define THREAD_2 1
+
+#define SNDRCV_MQ "posix_send_receive_mq"
 #define MAX_MSG_SIZE 128
+
+/* POSIX thread declarations and scheduling attributes */
+pthread_t threads[NUM_THREADS];
 
 struct mq_attr mq_attr;
 
-void receiver(void)
+typedef struct
+{
+  int param;
+} threadParams_t;
+
+threadParams_t threadParams[NUM_THREADS];
+
+void *receiver(void *threadp)
 {
   mqd_t mymq;
   char buffer[MAX_MSG_SIZE];
@@ -45,7 +65,7 @@ void receiver(void)
 
 static char canned_msg[] = "this is a test, and only a test, in the event of a real emergency, you would be instructed ...";
 
-void sender(void)
+void *sender(void *threadp) 
 {
   mqd_t mymq;
   int prio;
@@ -69,18 +89,36 @@ void sender(void)
   
 }
 
+int main(int argc, char *argv[]) {
+  int i = 0;
 
+  // setup common message q attributes
+  mq_attr.mq_maxmsg = 100;
+  mq_attr.mq_msgsize = MAX_MSG_SIZE;
+
+  mq_attr.mq_flags = 0;
+
+  pthread_create(&threads[THREAD_1], NULL, receiver, (void *)&threadParams[THREAD_1]);
+  pthread_create(&threads[THREAD_2], NULL, sender, (void *)&threadParams[THREAD_2]);
+
+  for (i = 0; i < NUM_THREADS; i++)
+    pthread_join(threads[i], NULL);
+
+  return 0;
+}
+
+/*
 void mq_demo(void)
 {
 
-  /* setup common message q attributes */
+  // setup common message q attributes
   mq_attr.mq_maxmsg = 100;
   mq_attr.mq_msgsize = MAX_MSG_SIZE;
 
   mq_attr.mq_flags = 0;
 
 
-  /* receiver runs at a higher priority than the sender */
+  // receiver runs at a higher priority than the sender 
   if(taskSpawn("Receiver", 90, 0, 4000, receiver, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0) == ERROR) {
     printf("Receiver task spawn failed\n");
   }
@@ -95,3 +133,4 @@ void mq_demo(void)
 
    
 }
+*/

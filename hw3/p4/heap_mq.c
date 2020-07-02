@@ -4,20 +4,45 @@
 /*                                                                          */
 /*                                                                          */
 /****************************************************************************/
-                                                                    
-#include "msgQLib.h"
-#include "mqueue.h"
-#include "errnoLib.h" 
-#include "ioLib.h" 
 
-#define SNDRCV_MQ "send_receive_mq"
+#include <pthread.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <sched.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/time.h>
+#include <errno.h>
+#include <mqueue.h>
+
+#define ERROR -1
+
+#define NUM_THREADS 2
+#define THREAD_1 0
+#define THREAD_2 1
+#define SCHED_POLICY SCHED_FIFO
+
+#define SNDRCV_MQ "heap_send_receive_mq"
 
 struct mq_attr mq_attr;
 static mqd_t mymq;
+static char imagebuff[4096];
+
+/* POSIX thread declarations and scheduling attributes */
+pthread_t threads[NUM_THREADS];
+
+struct mq_attr mq_attr;
+
+typedef struct
+{
+  int param;
+} threadParams_t;
+
+threadParams_t threadParams[NUM_THREADS];
+struct sched_param schedParam;
 
 /* receives pointer to heap, reads it, and deallocate heap memory */
-
-void receiver(void)
+void *receiver(void *threadp)
 {
   char buffer[sizeof(void *)+sizeof(int)];
   void *buffptr; 
@@ -58,9 +83,7 @@ void receiver(void)
 }
 
 
-static char imagebuff[4096];
-
-void sender(void)
+void *sender(void *threadp)
 {
   char buffer[sizeof(void *)+sizeof(int)];
   void *buffptr;
@@ -91,13 +114,57 @@ void sender(void)
       printf("send: message ptr 0x%X successfully sent\n", buffptr);
     }
 
-    taskDelay(3000);
+    sleep (3);
 
   }
   
 }
 
+void main(void)
+{
+  int i, j;
+  char pixel = 'A';
+  int maxPriority;
 
+  for(i=0;i<4096;i+=64) {
+    pixel = 'A';
+    for(j=i;j<i+64;j++) {
+      imagebuff[j] = (char)pixel++;
+    }
+    imagebuff[j-1] = '\n';
+  }
+  imagebuff[4095] = '\0';
+  imagebuff[63] = '\0';
+
+  printf("buffer =\n%s", imagebuff);
+
+  // setup common message q attributes
+  mq_attr.mq_maxmsg = 100;
+  mq_attr.mq_msgsize = sizeof(void *)+sizeof(int);
+
+  mq_attr.mq_flags = 0;
+
+  // note that VxWorks does not deal with permissions?
+  mymq = mq_open(SNDRCV_MQ, O_CREAT|O_RDWR, 0, &mq_attr);
+
+  if(mymq == (mqd_t)ERROR)
+    perror("mq_open");
+
+
+   /* Set Sched priority to max value */
+   maxPriority = sched_get_priority_max(SCHED_POLICY);
+   schedParam.sched_priority = maxPriority;
+   sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
+
+  pthread_create(&threads[THREAD_1], NULL, receiver, (void *)&threadParams[THREAD_1]);
+  pthread_create(&threads[THREAD_2], NULL, sender, (void *)&threadParams[THREAD_2]);
+
+  for (i = 0; i < NUM_THREADS; i++) {
+    pthread_join(threads[i], NULL);
+  }
+}
+
+/*
 static int sid, rid;
 
 void heap_mq(void)
@@ -117,19 +184,19 @@ void heap_mq(void)
 
   printf("buffer =\n%s", imagebuff);
 
-  /* setup common message q attributes */
+  // setup common message q attributes
   mq_attr.mq_maxmsg = 100;
   mq_attr.mq_msgsize = sizeof(void *)+sizeof(int);
 
   mq_attr.mq_flags = 0;
 
-  /* note that VxWorks does not deal with permissions? */
+  // note that VxWorks does not deal with permissions?
   mymq = mq_open(SNDRCV_MQ, O_CREAT|O_RDWR, 0, &mq_attr);
 
   if(mymq == (mqd_t)ERROR)
     perror("mq_open");
 
-  /* receiver runs at a higher priority than the sender */
+  // receiver runs at a higher priority than the sender
   if((rid=taskSpawn("Receiver", 90, 0, 4000, receiver, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)) == ERROR) {
     printf("Receiver task spawn failed\n");
   }
@@ -143,11 +210,4 @@ void heap_mq(void)
     printf("Sender task spawned\n");
 
 }
-
-void shutdown(void)
-{
-  mq_close(mymq);
-  taskDelete(sid);
-  taskDelete(rid);
-
-}
+*/
