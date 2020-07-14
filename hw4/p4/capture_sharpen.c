@@ -55,15 +55,7 @@ typedef unsigned char UINT8;
 // PPM Edge Enhancement Code
 //
 UINT8 header[22];
-UINT8 Y[YUYV_PIXEL_LENGTH];
-UINT8 U[YUYV_PIXEL_LENGTH];
-UINT8 Y2[YUYV_PIXEL_LENGTH];
-UINT8 V[YUYV_PIXEL_LENGTH];
 UINT8 Y_Combined[YUYV_PIXEL_LENGTH];
-UINT8 convY[YUYV_PIXEL_LENGTH];
-UINT8 convU[YUYV_PIXEL_LENGTH];
-UINT8 convY2[YUYV_PIXEL_LENGTH];
-UINT8 convV[YUYV_PIXEL_LENGTH];
 UINT8 convY_Combined[YUYV_PIXEL_LENGTH];
 
 #define K 4.0
@@ -108,7 +100,7 @@ static int xioctl(int fh, int request, void *arg)
 
         do 
         {
-            r = ioctl(fh, request, arg);
+        r = ioctl(fh, request, arg);
 
         } while (-1 == r && EINTR == errno);
 
@@ -246,19 +238,13 @@ void sharpenyuv(unsigned char* input, unsigned char* output, int size)
     FLOAT temp = 0;
 
     /* Read data into respective data type */
-    for(i=0; i<(size/2); i++){
-        Y[i]  = input[(i*4) + 0];
-        U[i]  = input[(i*4) + 1];
-        Y2[i] = input[(i*4) + 2];
-        V[i]  = input[(i*4) + 3];
-        Y_Combined[i] = Y[i];
-        Y_Combined[i+1] = Y2[i];
+    for(i=0; i<(YUYV_PIXEL_LENGTH); i++){
+        Y_Combined[i] = input[(i*2)];
     }
 
     /* Sharpen data */
     /* Reduce size by 2 since edges cannot be sharpened */
     for (i=1; i<(YUYV_IMG_HEIGHT-1); i++) {
-
         for (j=1; j<(YUYV_IMG_WIDTH-1); j++) {
             temp = 0;
             temp += (PSF[0] * (FLOAT)Y_Combined[((i-1)*YUYV_IMG_WIDTH)+j-1]);
@@ -276,11 +262,9 @@ void sharpenyuv(unsigned char* input, unsigned char* output, int size)
         }
     }
 
-    for(i=0; i<(size/4); i++){
-        output[(i*4)] = convY_Combined[i];
-        output[(i*4)+1] = U[i];
-        output[(i*4)+2] = convY_Combined[i+1];
-        output[(i*4)+3] = V[i];
+    for(i=0; i<(YUYV_PIXEL_LENGTH); i++){
+        output[(i*2)] = convY_Combined[i];
+        //output[(i*2)] = Y_Combined[i];
     }
 }
 
@@ -316,7 +300,7 @@ static void process_image(const void *p, int size)
     {
 
 #if defined(SHARPEN)
-        //sharpenyuv(pptr, pptr, size);
+        sharpenyuv(pptr, pptr, size);
         //dump_pgm(bigbuffer, size, framecnt, &frame_time);
 #endif
 
