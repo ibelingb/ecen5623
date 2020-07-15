@@ -33,6 +33,9 @@
 
 #include <time.h>
 
+#include <sched.h>
+#include <pthread.h>
+
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
 //#define COLOR_CONVERT
 //#define SHARPEN
@@ -46,6 +49,14 @@
 #define YUYV_PIXEL_LENGTH (IMG_HEIGHT*IMG_WIDTH)
 #define YUYV_IMG_HEIGHT (IMG_HEIGHT)
 #define YUYV_IMG_WIDTH (IMG_WIDTH)
+
+#define NUM_THREADS 1
+#define THREAD_1 0
+#define SCHED_POLICY SCHED_FIFO
+
+pthread_t threads[NUM_THREADS];
+pthread_attr_t schedAttr;
+struct sched_param schedParam;
 
 typedef double FLOAT;
 typedef unsigned int UINT32;
@@ -463,7 +474,7 @@ static int read_frame(void)
 }
 
 
-static void mainloop(void)
+static void *mainloop(void *threadp)
 {
     unsigned int count;
     struct timespec read_delay;
@@ -951,10 +962,24 @@ long_options[] = {
 
 int main(int argc, char **argv)
 {
+    int i;
+    int maxPriority;
+
     if(argc > 1)
         dev_name = argv[1];
     else
         dev_name = "/dev/video0";
+
+    /* Set Scheduler Policy to FIFO */
+    pthread_attr_init(&schedAttr);
+    pthread_attr_setinheritsched(&schedAttr, PTHREAD_EXPLICIT_SCHED);
+    pthread_attr_setschedpolicy(&schedAttr, SCHED_POLICY);
+
+    /* Set Sched priority to max value */
+    maxPriority = sched_get_priority_max(SCHED_POLICY);
+    schedParam.sched_priority = maxPriority;
+    sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
+    pthread_attr_setschedparam(&schedAttr, &schedParam);
 
     for (;;)
     {
@@ -1016,7 +1041,14 @@ int main(int argc, char **argv)
     open_device();
     init_device();
     start_capturing();
-    mainloop();
+
+    /* Create threads */
+    pthread_create(&threads[THREAD_1], &schedAttr, mainloop, NULL);
+    //mainloop();
+
+    for(i=0;i<NUM_THREADS;i++)
+        pthread_join(threads[i], NULL);
+
     stop_capturing();
     uninit_device();
     close_device();
