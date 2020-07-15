@@ -11,7 +11,14 @@
  *
  *      This program is provided with the V4L2 API
  * see http://linuxtv.org/docs.php for more information
+ * 
+ * Updates:
+ *  - Leveraged code from Lab1.c, found below:
+ *      http://ecee.colorado.edu/~ecen5623/ecen/ex/Linux/code/sequencer/lab1.c
  */
+
+// This is necessary for CPU affinity macros in Linux
+#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,7 +45,8 @@
 
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
 //#define COLOR_CONVERT
-//#define SHARPEN
+//#define SHARPEN_YUV
+//#define SHARPEN_RGB
 #define HRES 320
 #define VRES 240
 #define HRES_STR "320"
@@ -46,9 +54,8 @@
 
 #define IMG_HEIGHT (HRES)
 #define IMG_WIDTH (VRES)
-#define YUYV_PIXEL_LENGTH (IMG_HEIGHT*IMG_WIDTH)
-#define YUYV_IMG_HEIGHT (IMG_HEIGHT)
-#define YUYV_IMG_WIDTH (IMG_WIDTH)
+#define FRAME_SIZE (IMG_HEIGHT*IMG_WIDTH)
+#define RGB_FRAME_SIZE (IMG_HEIGHT*IMG_WIDTH*3) // Multiple by 3 for each color pixel
 
 #define NUM_THREADS 1
 #define THREAD_1 0
@@ -66,8 +73,14 @@ typedef unsigned char UINT8;
 // PPM Edge Enhancement Code
 //
 UINT8 header[22];
-UINT8 Y_Combined[YUYV_PIXEL_LENGTH];
-UINT8 convY_Combined[YUYV_PIXEL_LENGTH];
+UINT8 Y_Combined[FRAME_SIZE];
+UINT8 convY_Combined[FRAME_SIZE];
+UINT8 R[IMG_HEIGHT*IMG_WIDTH];
+UINT8 G[IMG_HEIGHT*IMG_WIDTH];
+UINT8 B[IMG_HEIGHT*IMG_WIDTH];
+UINT8 convR[IMG_HEIGHT*IMG_WIDTH];
+UINT8 convG[IMG_HEIGHT*IMG_WIDTH];
+UINT8 convB[IMG_HEIGHT*IMG_WIDTH];
 
 #define K 4.0
 FLOAT PSF[9] = {-K/8.0, -K/8.0, -K/8.0, -K/8.0, K+1.0, -K/8.0, -K/8.0, -K/8.0, -K/8.0};
@@ -249,35 +262,105 @@ void sharpenyuv(unsigned char* input, unsigned char* output, int size)
     FLOAT temp = 0;
 
     /* Read data into respective data type */
-    for(i=0; i<(YUYV_PIXEL_LENGTH); i++){
+    for(i=0; i<(FRAME_SIZE); i++){
         Y_Combined[i] = input[(i*2)];
     }
 
     /* Sharpen data */
     /* Reduce size by 2 since edges cannot be sharpened */
-    for (i=1; i<(YUYV_IMG_HEIGHT-1); i++) {
-        for (j=1; j<(YUYV_IMG_WIDTH-1); j++) {
+    for (i=1; i<(IMG_HEIGHT-1); i++) {
+        for (j=1; j<(IMG_WIDTH-1); j++) {
             temp = 0;
-            temp += (PSF[0] * (FLOAT)Y_Combined[((i-1)*YUYV_IMG_WIDTH)+j-1]);
-            temp += (PSF[1] * (FLOAT)Y_Combined[((i-1)*YUYV_IMG_WIDTH)+j]);
-            temp += (PSF[2] * (FLOAT)Y_Combined[((i-1)*YUYV_IMG_WIDTH)+j+1]);
-            temp += (PSF[3] * (FLOAT)Y_Combined[((i)*YUYV_IMG_WIDTH)+j-1]);
-            temp += (PSF[4] * (FLOAT)Y_Combined[((i)*YUYV_IMG_WIDTH)+j]);
-            temp += (PSF[5] * (FLOAT)Y_Combined[((i)*YUYV_IMG_WIDTH)+j+1]);
-            temp += (PSF[6] * (FLOAT)Y_Combined[((i+1)*YUYV_IMG_WIDTH)+j-1]);
-            temp += (PSF[7] * (FLOAT)Y_Combined[((i+1)*YUYV_IMG_WIDTH)+j]);
-            temp += (PSF[8] * (FLOAT)Y_Combined[((i+1)*YUYV_IMG_WIDTH)+j+1]);
+            temp += (PSF[0] * (FLOAT)Y_Combined[((i-1)*IMG_WIDTH)+j-1]);
+            temp += (PSF[1] * (FLOAT)Y_Combined[((i-1)*IMG_WIDTH)+j]);
+            temp += (PSF[2] * (FLOAT)Y_Combined[((i-1)*IMG_WIDTH)+j+1]);
+            temp += (PSF[3] * (FLOAT)Y_Combined[((i)*IMG_WIDTH)+j-1]);
+            temp += (PSF[4] * (FLOAT)Y_Combined[((i)*IMG_WIDTH)+j]);
+            temp += (PSF[5] * (FLOAT)Y_Combined[((i)*IMG_WIDTH)+j+1]);
+            temp += (PSF[6] * (FLOAT)Y_Combined[((i+1)*IMG_WIDTH)+j-1]);
+            temp += (PSF[7] * (FLOAT)Y_Combined[((i+1)*IMG_WIDTH)+j]);
+            temp += (PSF[8] * (FLOAT)Y_Combined[((i+1)*IMG_WIDTH)+j+1]);
             if(temp<0.0) temp=0.0;
             if(temp>255.0) temp=255.0;
-            convY_Combined[(i*YUYV_IMG_WIDTH)+j]=(UINT8)temp;
+            convY_Combined[(i*IMG_WIDTH)+j]=(UINT8)temp;
         }
     }
 
-    for(i=0; i<(YUYV_PIXEL_LENGTH); i++){
+    for(i=0; i<(FRAME_SIZE); i++){
         output[(i*2)] = convY_Combined[i];
-        //output[(i*2)] = Y_Combined[i];
     }
 }
+
+void sharpenrgb(unsigned char* input, unsigned char* output, int size)
+{
+    int i = 0;
+    int j = 0;
+    FLOAT temp = 0;
+
+    // Read RGB data
+    for(i=0; i<(FRAME_SIZE); i++)
+    {
+        R[i] = input[i];
+        G[i] = input[i+1];
+        B[i] = input[i+2];
+    }
+
+    /* Sharpen data */
+    /* Reduce size by 2 since edges cannot be sharpened */
+    for (i=1; i<(IMG_HEIGHT-1); i++) {
+        for (j=1; j<(IMG_WIDTH-1); j++) {
+            temp=0;
+            temp += (PSF[0] * (FLOAT)R[((i-1)*IMG_WIDTH)+j-1]);
+            temp += (PSF[1] * (FLOAT)R[((i-1)*IMG_WIDTH)+j]);
+            temp += (PSF[2] * (FLOAT)R[((i-1)*IMG_WIDTH)+j+1]);
+            temp += (PSF[3] * (FLOAT)R[((i)*IMG_WIDTH)+j-1]);
+            temp += (PSF[4] * (FLOAT)R[((i)*IMG_WIDTH)+j]);
+            temp += (PSF[5] * (FLOAT)R[((i)*IMG_WIDTH)+j+1]);
+            temp += (PSF[6] * (FLOAT)R[((i+1)*IMG_WIDTH)+j-1]);
+            temp += (PSF[7] * (FLOAT)R[((i+1)*IMG_WIDTH)+j]);
+            temp += (PSF[8] * (FLOAT)R[((i+1)*IMG_WIDTH)+j+1]);
+	    if(temp<0.0) temp=0.0;
+	    if(temp>255.0) temp=255.0;
+	    convR[(i*IMG_WIDTH)+j]=(UINT8)temp;
+
+            temp=0;
+            temp += (PSF[0] * (FLOAT)G[((i-1)*IMG_WIDTH)+j-1]);
+            temp += (PSF[1] * (FLOAT)G[((i-1)*IMG_WIDTH)+j]);
+            temp += (PSF[2] * (FLOAT)G[((i-1)*IMG_WIDTH)+j+1]);
+            temp += (PSF[3] * (FLOAT)G[((i)*IMG_WIDTH)+j-1]);
+            temp += (PSF[4] * (FLOAT)G[((i)*IMG_WIDTH)+j]);
+            temp += (PSF[5] * (FLOAT)G[((i)*IMG_WIDTH)+j+1]);
+            temp += (PSF[6] * (FLOAT)G[((i+1)*IMG_WIDTH)+j-1]);
+            temp += (PSF[7] * (FLOAT)G[((i+1)*IMG_WIDTH)+j]);
+            temp += (PSF[8] * (FLOAT)G[((i+1)*IMG_WIDTH)+j+1]);
+	    if(temp<0.0) temp=0.0;
+	    if(temp>255.0) temp=255.0;
+	    convG[(i*IMG_WIDTH)+j]=(UINT8)temp;
+
+            temp=0;
+            temp += (PSF[0] * (FLOAT)B[((i-1)*IMG_WIDTH)+j-1]);
+            temp += (PSF[1] * (FLOAT)B[((i-1)*IMG_WIDTH)+j]);
+            temp += (PSF[2] * (FLOAT)B[((i-1)*IMG_WIDTH)+j+1]);
+            temp += (PSF[3] * (FLOAT)B[((i)*IMG_WIDTH)+j-1]);
+            temp += (PSF[4] * (FLOAT)B[((i)*IMG_WIDTH)+j]);
+            temp += (PSF[5] * (FLOAT)B[((i)*IMG_WIDTH)+j+1]);
+            temp += (PSF[6] * (FLOAT)B[((i+1)*IMG_WIDTH)+j-1]);
+            temp += (PSF[7] * (FLOAT)B[((i+1)*IMG_WIDTH)+j]);
+            temp += (PSF[8] * (FLOAT)B[((i+1)*IMG_WIDTH)+j+1]);
+	    if(temp<0.0) temp=0.0;
+	    if(temp>255.0) temp=255.0;
+	    convB[(i*IMG_WIDTH)+j]=(UINT8)temp;
+        }
+    }
+
+    /* Write sharpened RGB data out */
+    for(i=0; i<(FRAME_SIZE); i++){
+        output[i]   = convR[i];
+        output[i+1] = convG[i];
+        output[i+2] = convB[i];
+    }
+}
+
 
 unsigned int framecnt=0;
 unsigned char bigbuffer[(1280*960)];
@@ -303,20 +386,20 @@ static void process_image(const void *p, int size)
 
     if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_GREY)
     {
-        printf("Dump graymap as-is size %d\n", size);
+        //printf("Dump graymap as-is size %d\n", size);
         dump_pgm(p, size, framecnt, &frame_time);
     }
 
     else if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV)
     {
 
-#if defined(SHARPEN)
+#if defined(SHARPEN_YUV)
         sharpenyuv(pptr, pptr, size);
         //dump_pgm(bigbuffer, size, framecnt, &frame_time);
 #endif
 
 #if defined(COLOR_CONVERT)
-        printf("Dump YUYV converted to RGB size %d\n", size);
+        //printf("Dump YUYV converted to RGB size %d\n", size);
        
         // Pixels are YU and YV alternating, so YUYV which is 4 bytes
         // We want RGB, so RGBRGB which is 6 bytes
@@ -330,6 +413,10 @@ static void process_image(const void *p, int size)
             yuv2rgb(y_temp, u_temp, v_temp, &bigbuffer[newi], &bigbuffer[newi+1], &bigbuffer[newi+2]);
             yuv2rgb(y2_temp, u_temp, v_temp, &bigbuffer[newi+3], &bigbuffer[newi+4], &bigbuffer[newi+5]);
         }
+
+#if defined(SHARPEN_YUV)
+        sharpenrgb(pptr, pptr, size);
+#endif
 
         dump_ppm(bigbuffer, ((size*6)/4), framecnt, &frame_time);
 
@@ -354,7 +441,7 @@ static void process_image(const void *p, int size)
 
     else if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_RGB24)
     {
-        printf("Dump RGB as-is size %d\n", size);
+        //printf("Dump RGB as-is size %d\n", size);
         dump_ppm(p, size, framecnt, &frame_time);
     }
     else
@@ -845,7 +932,6 @@ static void init_device(void)
 
         // This one work for Logitech C200
         fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
-        printf("pixel format: %d\n",fmt.fmt.pix.pixelformat);
 
         //fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_UYVY;
         //fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_VYUY;
@@ -964,22 +1050,14 @@ int main(int argc, char **argv)
 {
     int i;
     int maxPriority;
+    cpu_set_t threadcpu;
+    pid_t mainpid;
+    cpu_set_t allcpuset;
 
     if(argc > 1)
         dev_name = argv[1];
     else
         dev_name = "/dev/video0";
-
-    /* Set Scheduler Policy to FIFO */
-    pthread_attr_init(&schedAttr);
-    pthread_attr_setinheritsched(&schedAttr, PTHREAD_EXPLICIT_SCHED);
-    pthread_attr_setschedpolicy(&schedAttr, SCHED_POLICY);
-
-    /* Set Sched priority to max value */
-    maxPriority = sched_get_priority_max(SCHED_POLICY);
-    schedParam.sched_priority = maxPriority;
-    sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
-    pthread_attr_setschedparam(&schedAttr, &schedParam);
 
     for (;;)
     {
@@ -1038,20 +1116,41 @@ int main(int argc, char **argv)
         }
     }
 
-    open_device();
-    init_device();
-    start_capturing();
+   printf("System has %d processors configured and %d available.\n", get_nprocs_conf(), get_nprocs());
+   CPU_ZERO(&allcpuset);
+   for(i=0; i < NUM_CPU_CORES; i++)
+       CPU_SET(i, &allcpuset);
+   printf("Using CPUS=%d from total available.\n", CPU_COUNT(&allcpuset));
+   CPU_ZERO(&threadcpu);
+   CPU_SET(3, &threadcpu);
 
-    /* Create threads */
-    pthread_create(&threads[THREAD_1], &schedAttr, mainloop, NULL);
-    //mainloop();
+   /* Set Scheduler Policy to FIFO */
+   pthread_attr_init(&schedAttr);
+   pthread_attr_setinheritsched(&schedAttr, PTHREAD_EXPLICIT_SCHED);
+   pthread_attr_setschedpolicy(&schedAttr, SCHED_POLICY);
+   pthread_attr_setaffinity_np(&rt_sched_attr[i], sizeof(cpu_set_t), &threadcpu);
 
-    for(i=0;i<NUM_THREADS;i++)
-        pthread_join(threads[i], NULL);
+   /* Set Sched priority to max value */
+   maxPriority = sched_get_priority_max(SCHED_POLICY);
+   schedParam.sched_priority = maxPriority;
+   sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
+   pthread_attr_setschedparam(&schedAttr, &schedParam);
 
-    stop_capturing();
-    uninit_device();
-    close_device();
-    fprintf(stderr, "\n");
-    return 0;
+   printf("Service threads will run on %d CPU cores\n", CPU_COUNT(&threadcpu));
+
+   open_device();
+   init_device();
+   start_capturing();
+
+   /* Create threads */
+   pthread_create(&threads[THREAD_1], &schedAttr, mainloop, NULL);
+
+   for (i = 0; i < NUM_THREADS; i++)
+       pthread_join(threads[i], NULL);
+
+   stop_capturing();
+   uninit_device();
+   close_device();
+   fprintf(stderr, "\n");
+   return 0;
 }
