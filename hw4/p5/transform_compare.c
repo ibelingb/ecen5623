@@ -44,22 +44,23 @@
 #include <pthread.h>
 
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
-//#define COLOR_CONVERT
+#define COLOR_CONVERT
 //#define SHARPEN_YUV
-//#define SHARPEN_RGB
-#define HRES 320
-#define VRES 240
-#define HRES_STR "320"
-#define VRES_STR "240"
+#define SHARPEN_RGB
+#define HRES 640
+#define VRES 480
+#define HRES_STR "640"
+#define VRES_STR "480"
 
 #define IMG_HEIGHT (HRES)
 #define IMG_WIDTH (VRES)
 #define FRAME_SIZE (IMG_HEIGHT*IMG_WIDTH)
 #define RGB_FRAME_SIZE (IMG_HEIGHT*IMG_WIDTH*3) // Multiple by 3 for each color pixel
 
-#define NUM_THREADS 1
-#define THREAD_1 0
+#define NUM_THREADS (1)
+#define THREAD_1 (0)
 #define SCHED_POLICY SCHED_FIFO
+#define NUM_CPU_CORES (1)
 
 pthread_t threads[NUM_THREADS];
 pthread_attr_t schedAttr;
@@ -414,7 +415,7 @@ static void process_image(const void *p, int size)
             yuv2rgb(y2_temp, u_temp, v_temp, &bigbuffer[newi+3], &bigbuffer[newi+4], &bigbuffer[newi+5]);
         }
 
-#if defined(SHARPEN_YUV)
+#if defined(SHARPEN_RGB)
         sharpenrgb(pptr, pptr, size);
 #endif
 
@@ -1116,11 +1117,9 @@ int main(int argc, char **argv)
         }
     }
 
-   printf("System has %d processors configured and %d available.\n", get_nprocs_conf(), get_nprocs());
    CPU_ZERO(&allcpuset);
    for(i=0; i < NUM_CPU_CORES; i++)
        CPU_SET(i, &allcpuset);
-   printf("Using CPUS=%d from total available.\n", CPU_COUNT(&allcpuset));
    CPU_ZERO(&threadcpu);
    CPU_SET(3, &threadcpu);
 
@@ -1128,15 +1127,13 @@ int main(int argc, char **argv)
    pthread_attr_init(&schedAttr);
    pthread_attr_setinheritsched(&schedAttr, PTHREAD_EXPLICIT_SCHED);
    pthread_attr_setschedpolicy(&schedAttr, SCHED_POLICY);
-   pthread_attr_setaffinity_np(&rt_sched_attr[i], sizeof(cpu_set_t), &threadcpu);
+   pthread_attr_setaffinity_np(&schedAttr, sizeof(cpu_set_t), &threadcpu);
 
    /* Set Sched priority to max value */
    maxPriority = sched_get_priority_max(SCHED_POLICY);
    schedParam.sched_priority = maxPriority;
    sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
    pthread_attr_setschedparam(&schedAttr, &schedParam);
-
-   printf("Service threads will run on %d CPU cores\n", CPU_COUNT(&threadcpu));
 
    open_device();
    init_device();
