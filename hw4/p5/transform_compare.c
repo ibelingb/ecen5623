@@ -43,6 +43,8 @@
 #include <sched.h>
 #include <pthread.h>
 
+#include <syslog.h>
+
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
 #define COLOR_CONVERT
 //#define SHARPEN_YUV
@@ -61,6 +63,8 @@
 #define THREAD_1 (0)
 #define SCHED_POLICY SCHED_FIFO
 #define NUM_CPU_CORES (1)
+
+#define JITTER_ANALYSIS
 
 pthread_t threads[NUM_THREADS];
 pthread_attr_t schedAttr;
@@ -130,6 +134,14 @@ static int xioctl(int fh, int request, void *arg)
         } while (-1 == r && EINTR == errno);
 
         return r;
+}
+
+double getTimeMsec(void)
+{
+  struct timespec event_ts = {0, 0};
+
+  clock_gettime(CLOCK_REALTIME, &event_ts);
+  return ((event_ts.tv_sec)*1000.0) + ((event_ts.tv_nsec)/1000000.0);
 }
 
 char ppm_header[]="P6\n#9999999999 sec 9999999999 msec \n"HRES_STR" "VRES_STR"\n255\n";
@@ -568,8 +580,10 @@ static void *mainloop(void *threadp)
     struct timespec read_delay;
     struct timespec time_error;
 
+    struct timespec event_ts = {0, 0};
+
     read_delay.tv_sec=0;
-    read_delay.tv_nsec=30000;
+    read_delay.tv_nsec=30000000;
 
     count = frame_count;
 
@@ -602,7 +616,20 @@ static void *mainloop(void *threadp)
                 fprintf(stderr, "select timeout\n");
                 exit(EXIT_FAILURE);
             }
+#if defined JITTER_ANALYSIS
+            if (nanosleep(&read_delay, &time_error) != 0)
+                perror("nanosleep");
+            else
+            {
+                /* Capture event time in syslog */
+                clock_gettime(CLOCK_REALTIME, &event_ts);
+                syslog(LOG_INFO, "frame sample Jitter - sec: %ld, nsec: %ld\n", event_ts.tv_sec, event_ts.tv_nsec );
+            }
 
+            count--;
+            break;
+
+#else 
             if (read_frame())
             {
                 if(nanosleep(&read_delay, &time_error) != 0)
@@ -613,7 +640,7 @@ static void *mainloop(void *threadp)
                 count--;
                 break;
             }
-
+#endif 
             /* EAGAIN - continue select loop unless count done. */
             if(count <= 0) break;
         }
@@ -1135,6 +1162,10 @@ int main(int argc, char **argv)
    sched_setscheduler(getpid(), SCHED_POLICY, &schedParam);
    pthread_attr_setschedparam(&schedAttr, &schedParam);
 
+    /* Setup Syslog */
+   setlogmask(LOG_UPTO(LOG_INFO));
+   openlog("jitterAnalysis", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
+
    open_device();
    init_device();
    start_capturing();
@@ -1148,6 +1179,7 @@ int main(int argc, char **argv)
    stop_capturing();
    uninit_device();
    close_device();
+   closelog();
    fprintf(stderr, "\n");
    return 0;
 }
